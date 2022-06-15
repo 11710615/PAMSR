@@ -9,7 +9,7 @@ class Discriminator(nn.Module):
     def __init__(self, args):
         super(Discriminator, self).__init__()
 
-        in_channels = args.n_colors
+        in_channels = args.output_channels
         out_channels = 64
         depth = 7
 

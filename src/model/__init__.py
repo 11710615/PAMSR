@@ -113,7 +113,6 @@ class Model(nn.Module):
         n_GPUs = min(len(self.gpu_ids), 4)
         # height, width
         h, w = args[0].size()[-2:]
-
         top = slice(0, h//2 + shave)
         bottom = slice(h - h//2 - shave, h)
         left = slice(0, w//2 + shave)
@@ -125,13 +124,17 @@ class Model(nn.Module):
             a[..., bottom, right]
         ]) for a in args]
 
+
         y_chops = []
         if h * w < 4 * min_size:
             for i in range(0, 4, n_GPUs):
                 x = [x_chop[i:(i + n_GPUs)] for x_chop in x_chops]
                 # y = P.data_parallel(self.model, *x, range(n_GPUs))
-                y = P.data_parallel(self.model, *x, self.gpu_ids)
+                y = P.data_parallel(self.model, *x, self.gpu_ids)  #[[3,1,540,540],[3,1,540,540]]=[[sr_out],[gm_out]]
+                if isinstance(y,tuple):
+                    y = y[0]  # output tuple for spsr
                 if not isinstance(y, list): y = [y]
+
                 if not y_chops:
                     y_chops = [[c for c in _y.chunk(n_GPUs, dim=0)] for _y in y]
                 else:
@@ -140,6 +143,8 @@ class Model(nn.Module):
         else:
             for p in zip(*x_chops):
                 y = self.forward_chop(*p, shave=shave, min_size=min_size)
+                if isinstance(y,tuple): 
+                    y = y[0]  # output tuple for spsr
                 if not isinstance(y, list): y = [y]
                 if not y_chops:
                     y_chops = [[_y] for _y in y]

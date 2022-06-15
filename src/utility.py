@@ -70,7 +70,8 @@ class checkpoint():
         os.makedirs(self.dir, exist_ok=True)
         os.makedirs(self.get_path('model'), exist_ok=True)
         for d in args.data_test:
-            os.makedirs(self.get_path('results-{}'.format(d)), exist_ok=True)
+            # os.makedirs(self.get_path('results-{}'.format(d)), exist_ok=True)
+            os.makedirs(self.get_path('results-{}'.format(self.args.model)), exist_ok=True)
 
         open_type = 'a' if os.path.exists(self.get_path('log.txt'))else 'w'
         self.log_file = open(self.get_path('log.txt'), open_type)
@@ -151,13 +152,15 @@ class checkpoint():
     def save_results(self, dataset, filename, save_list, scale):
         if self.args.save_results:
             filename = self.get_path(
-                'results-{}'.format(dataset.dataset.name),
+                'results-{}'.format(self.args.model),
                 '{}_x{}_'.format(filename, scale)
             )
-
-            postfix = ('SR', 'LR', 'HR')
+            if self.args.save_gm:
+                postfix = ('SR','SR_GM','HR_GM','Rec_GM')
+            else:
+                postfix = ('SR', 'LR', 'HR')
             for v, p in zip(save_list, postfix):
-                normalized = v[0].mul(255 / self.args.rgb_range)
+                normalized = v[0].mul(255 / self.args.rgb_range)  #
                 tensor_cpu = normalized.byte().permute(1, 2, 0).cpu()
                 self.queue.put(('{}{}.png'.format(filename, p), tensor_cpu))
 
@@ -165,15 +168,32 @@ def quantize(img, rgb_range):
     pixel_range = 255 / rgb_range
     return img.mul(pixel_range).clamp(0, 255).round().div(pixel_range)
 
+# def calc_psnr(sr,hr,scale,rgb_range,dataset=None):
+#     if hr.nelement() == 1: return 0
+
+#     if dataset and dataset.dataset.benchmark:
+#         shave = scale
+#     else:
+#         shave = scale + 6
+#     hr = hr.cpu().numpy()
+#     sr = sr.cpu().numpy()
+    
+#     psnr_value = psnr(hr[..., shave:-shave, shave:-shave],sr[..., shave:-shave, shave:-shave],data_range=rgb_range)
+
+#     return psnr_value
+
 def calc_psnr(sr, hr, scale, rgb_range, dataset=None):
     if hr.nelement() == 1: return 0
     diff = (sr - hr) / rgb_range
+
     if dataset and dataset.dataset.benchmark:
         shave = scale
         if diff.size(1) > 1:
             gray_coeffs = [65.738, 129.057, 25.064]
+            # gray_coeffs = [0., 0., 0.]
             convert = diff.new_tensor(gray_coeffs).view(1, 3, 1, 1) / 256
             diff = diff.mul(convert).sum(dim=1)
+            diff = diff.sum(dim=1)
     else:
         shave = scale + 6
 

@@ -18,10 +18,12 @@ class Style(nn.Module):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.cnn = models.vgg19(pretrained=True).features.eval()
         self.cnn_normalization_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
-        self.cnn_normalization_std = torch.tensor([0.229, 0.224, 0.225]).to(device)
+        self.cnn_normalization_std = torch.tensor([0.229*rgb_range, 0.224*rgb_range, 0.225*rgb_range]).to(device)
         self.RL1 = RL1
     def forward(self, sr, hr):
         if self.RL1 is True:
+            sr = sr[0]
+        if isinstance(sr,list):
             sr = sr[0]
         if self.n_colors==1:
             sr = sr.repeat(1,3,1,1)
@@ -30,7 +32,9 @@ class Style(nn.Module):
             sr = sr
         with torch.no_grad():
             hr = hr.detach()
-            
+        # if torch.max(hr) > 1:
+        #     sr = sr / 255
+        #     hr = hr / 255   
         # hr_gm = cal_GramMatrix(hr, self.vgg_features)
         # sr_gm = cal_GramMatrix(sr, self.vgg_features)
         # loss = 0
@@ -87,8 +91,10 @@ class StyleLoss(nn.Module):
 class Normalization(nn.Module):
     def __init__(self, mean, std):
         super(Normalization, self).__init__()
-        self.mean = torch.tensor(mean).view(-1, 1, 1)
-        self.std = torch.tensor(std).view(-1, 1, 1)
+        # self.mean = torch.tensor(mean).view(-1, 1, 1)
+        # self.std = torch.tensor(std).view(-1, 1, 1)
+        self.mean = mean.clone().detach().view(-1, 1, 1)
+        self.std = std.clone().detach().view(-1, 1, 1)     
 
     def forward(self, img):
         # normalize img

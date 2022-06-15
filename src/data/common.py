@@ -94,14 +94,14 @@ def augment(*args, hflip=True, rot=True):
     rot90 = rot and random.random() < 0.5
 
     def _augment(img):
-        # if hflip: img = img[:, ::-1, :]
-        # if vflip: img = img[::-1, :, :]
-        # if rot90: img = img.transpose(1, 0, 2)
-        
-        if hflip: img = img[:, ::-1]
-        if vflip: img = img[::-1, :]
-        if rot90: img = img.transpose(1, 0)
-        
+        if len(img.shape)==3:
+            if hflip: img = img[:, ::-1, :]
+            if vflip: img = img[::-1, :, :]
+            if rot90: img = img.transpose(1, 0, 2)
+        elif len(img.shape)==1:
+            if hflip: img = img[:, ::-1]
+            if vflip: img = img[::-1, :]
+            if rot90: img = img.transpose(1, 0)
         return img
 
     return [_augment(a) for a in args]

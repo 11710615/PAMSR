@@ -1,6 +1,6 @@
 import pstats
-from model import common
-
+# from model import common
+import common
 import torch.nn as nn
 
 url = {

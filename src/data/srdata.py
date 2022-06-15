@@ -131,7 +131,7 @@ class SRData(data.Dataset):
         idx = self._get_index(idx)
         f_hr = self.images_hr[idx]
         f_lr = self.images_lr[self.idx_scale][idx]
-
+        
         filename, _ = os.path.splitext(os.path.basename(f_hr))
         if self.args.ext == 'img' or self.benchmark:
             hr = imageio.imread(f_hr)

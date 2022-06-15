@@ -9,8 +9,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+
 class Adversarial(nn.Module):
-    def __init__(self, args, gan_type, RL1=False):
+    def __init__(self, args, gan_type, RL1=False, GM_input=False):
         super(Adversarial, self).__init__()
         self.gan_type = gan_type
         self.gan_k = args.gan_k
@@ -32,9 +33,16 @@ class Adversarial(nn.Module):
 
         self.optimizer = utility.make_optimizer(optim_args, self.dis)
         self.RL1 = RL1
+        self.gm_input = GM_input
+        self.gm = common.Get_gradient()
     def forward(self, fake, real):
         if self.RL1 is True:
             fake = fake[0]
+        if isinstance(fake,list):
+            fake = fake[0]
+        if self.gm_input is True:
+            fake = self.gm(fake)
+            real = self.gm(real)
         # updating discriminator...
         self.loss = 0
         fake_detach = fake.detach()     # do not backpropagate through G
@@ -44,7 +52,7 @@ class Adversarial(nn.Module):
             d_fake = self.dis(fake_detach)
             d_real = self.dis(real)
             retain_graph = False
-            if self.gan_type == 'GAN':
+            if self.gan_type in ['GAN','ganGM']:
                 loss_d = self.bce(d_real, d_fake)
             elif self.gan_type.find('WGAN') >= 0:
                 loss_d = (d_fake - d_real).mean()
@@ -81,7 +89,7 @@ class Adversarial(nn.Module):
 
         # updating generator...
         d_fake_bp = self.dis(fake)      # for backpropagation, use fake as it is
-        if self.gan_type == 'GAN':
+        if self.gan_type in ['GAN','ganGM']:
             label_real = torch.ones_like(d_fake_bp)
             loss_g = F.binary_cross_entropy_with_logits(d_fake_bp, label_real)
         elif self.gan_type.find('WGAN') >= 0:

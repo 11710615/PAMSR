@@ -864,7 +864,7 @@ class SwinIR(nn.Module):
             x = x + self.conv_last(res)
 
         x = x / self.img_range + self.mean
-        y = x / self.img_range + self.mean
+        y = y / self.img_range + self.mean
 
         return x[:, :, :H*self.upscale, :W*self.upscale], y[:, :, :H*self.upscale, :W*self.upscale]
 

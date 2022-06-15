@@ -29,6 +29,8 @@ parser.add_argument('--mask_dir', type=str, default='../data/dataset/mask',
                     help='mask dir')
 parser.add_argument('--use_mask', action='store_true',
                     help='use mask at the model output')
+parser.add_argument('--use_ema', action='store_true',
+                    help='use ema')
 
 parser.add_argument('--dir_demo', type=str, default='../test',
                     help='demo image directory')
@@ -42,12 +44,14 @@ parser.add_argument('--ext', type=str, default='sep',
                     help='dataset file extension')
 parser.add_argument('--scale', type=str, default='2',
                     help='super resolution scale')
-parser.add_argument('--patch_size', type=int, default=96,
+parser.add_argument('--patch_size', type=int, default=64,
                     help='output patch size')
 parser.add_argument('--rgb_range', type=int, default=255,
                     help='maximum value of RGB')
 parser.add_argument('--n_colors', type=int, default=3,
                     help='number of color channels to use')
+parser.add_argument('--output_channels', type=int, default=1,
+                    help='output_channels')
 parser.add_argument('--chop', action='store_true',
                     help='enable memory-efficient forward')
 parser.add_argument('--no_augment', action='store_true',
@@ -108,6 +112,8 @@ parser.add_argument('--test_only', action='store_true',
                     help='set this option to test the model')
 parser.add_argument('--gan_k', type=int, default=1,
                     help='k value for adversarial loss')
+parser.add_argument('--use ema', action='store_true',
+                    help='whether use ema')
 
 # Optimization specifications
 parser.add_argument('--lr', type=float, default=1e-4,
@@ -149,6 +155,8 @@ parser.add_argument('--print_every', type=int, default=100,
                     help='how many batches to wait before logging training status')
 parser.add_argument('--save_results', action='store_true',
                     help='save output results')
+parser.add_argument('--save_gm', action='store_true',
+                    help='save output gm')
 parser.add_argument('--save_gt', action='store_true',
                     help='save low-resolution and high-resolution images together')
 

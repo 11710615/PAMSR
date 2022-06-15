@@ -23,8 +23,17 @@ class VGG(nn.Module):
         self.n_colors = n_colors
         self.RL1 = RL1
     def forward(self, sr, hr):
+        if hr.shape[1]==1:  # vgg input must have 3 channels
+            hr = hr.repeat(1,3,1,1)
         if self.RL1 is True:
             sr = sr[0]
+        if isinstance(sr,list):
+            sr = sr[0]
+        if sr.shape[1]==1:  # vgg input must have 3 channels
+            sr = sr.repeat(1,3,1,1)
+        # if torch.max(hr) > 1:
+        #     sr = sr / 255
+        #     hr = hr / 255
         def _forward(x):
             if self.n_colors == 3:
                 pass

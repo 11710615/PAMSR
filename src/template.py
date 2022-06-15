@@ -1,3 +1,6 @@
+from pickle import TRUE
+
+
 def set_template(args):
     # Set the templates here
     if args.template.find('jpeg') >= 0:
@@ -66,9 +69,25 @@ def set_template(args):
 
     if args.template.find('swinir') >= 0:
         args.model = 'SwinIR'
-        args.patch_size = 48
+        args.patch_size = 64
         args.chop = True
 
+    if args.template.find('swinir_ema') >= 0:
+        args.model = 'SwinIR'
+        args.patch_size = 64
+        args.chop = True
+        args.use_ema = True
+        # args.save = 'swinir_ema_x' + args.scale + '_' + args.loss
+    
+    
+    if args.template.find('swinir_ema_x4') >= 0:
+        args.scale = '4'
+        args.model = 'SwinIR'
+        args.patch_size = 64
+        args.chop = True
+        args.use_ema = True
+        args.save = 'swinir_ema_x4' + '_' + args.loss
+    
     if args.template.find('swinir_real') >= 0:
         args.model = 'SwinIR'
         args.patch_size = 64
@@ -82,4 +101,30 @@ def set_template(args):
     if args.template.find('swinir_sigblock') >= 0:
         args.model = 'swinir_sigblock'
         args.patch_size = 64
+        args.chop = True
+
+    if args.template.find('swinir_sp') >= 0:
+        args.model = 'swinir_sp'
+        args.patch_size = 64
         args.chop = False
+        args.output_channels = 1
+        
+    
+    if args.template.find('swinir_hf_x4') >= 0:
+        args.model = 'swinir_sp'
+        args.patch_size = 64
+        args.chop = True
+        args.output_channels = 1
+        args.scale = '4'
+        args.save = 'swinir_hf_x4'
+        args.reset = True
+
+    if args.template.find('swinir_sp_div2k') >= 0:
+        args.model = 'swinir_sp'
+        args.patch = 64
+        args.chop = True
+        args.data_train = 'DIV2K_train'
+        args.data_test = 'DIV2K_valid'
+        args.data_range = '1-800/1-100'
+        args.output_channels = 3
+        args.batch_size = 3

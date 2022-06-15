@@ -1,3 +1,4 @@
+from cmath import nan
 import os
 from importlib import import_module
 from turtle import forward
@@ -11,28 +12,68 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from model import common
 
-# revisit L1 loss
+class WL1(nn.Module):
+    def __init__(self, ksize=7):
+        super(WL1, self).__init__()
+        self.ksize = ksize
+        self.l1 = nn.L1Loss()
+    def get_local_weights(self,residual, ksize=7):
+        pad = (ksize - 1) // 2
+        residual_pad = F.pad(residual, pad=[pad, pad, pad, pad], mode='reflect')
+        unfolded_residual = residual_pad.unfold(2, ksize, 1).unfold(3, ksize, 1)
+        pixel_level_weight = torch.var(unfolded_residual, dim=(-1, -2), unbiased=True, keepdim=True).squeeze(-1).squeeze(-1)
+        return pixel_level_weight
+
+    def forward(self,output,hr):
+        sr = output[0]
+        sr_ema = output[1]
+        residual_ema = torch.sum(torch.abs(hr - sr_ema), 1, keepdim=True) / 255
+        residual_SR = torch.sum(torch.abs(hr - sr), 1, keepdim=True) / 255
+
+        # need to detach, else nan will appear
+        patch_level_weight = torch.var(residual_SR.clone().detach(), dim=(-1, -2, -3), keepdim=True) ** (1/5)
+        pixel_level_weight = self.get_local_weights(residual_SR.clone().detach(), self.ksize)
+        overall_weight = patch_level_weight * pixel_level_weight
+
+        overall_weight[residual_SR < residual_ema] = 0
+        out = self.l1(overall_weight*sr, overall_weight*hr)
+
+        # print('output',torch.max(overall_weight),out,torch.max(patch_level_weight),torch.max(pixel_level_weight))
+        # r
+        return out
+
+# rewrite L1 loss
 class RL1(nn.Module):
     def __init__(self):
         super(RL1, self).__init__()
         self.l1 = nn.L1Loss()
     def forward(self,m,hr): # sr: tuple
-        sr = m[0] + torch.abs(hr - m[0]) * torch.randn_like(hr)
+        sr = m[0]
         out = self.l1(sr,hr)
         return out
 
-class AuxLoss(nn.Module):
+class L1GM(nn.Module):
     def __init__(self):
-        super(AuxLoss, self).__init__()
+        super(L1GM,self).__init__()
+        self.gm = common.Get_gradient()
         self.l1 = nn.L1Loss()
-    def forward(self,m,hr): # sr: tuple
-        sr_ = m[0].detach()
-        sigma = m[1]
-        out = self.l1(torch.abs(hr-sr_),sigma)
-        return out
+    def forward(self,out,hr):
+        sr_gm = self.gm(out[0])
+        hr_gm = self.gm(hr)
+        return self.l1(sr_gm,hr_gm)
 
-
+class L1RG(nn.Module):
+    def __init__(self):
+        super(L1RG, self).__init__()
+        self.gm = common.Get_gradient()
+        self.l1 = nn.L1Loss()
+    def forward(self,out,hr):
+        rec_gm=out[1]
+        hr_gm = self.gm(hr)
+        return self.l1(rec_gm,hr_gm)
+        
 # torch.autograd.set_detect_anomaly(True)
 class Loss(nn.modules.loss._Loss):
     def __init__(self, args, ckp):
@@ -51,22 +92,34 @@ class Loss(nn.modules.loss._Loss):
                 loss_function = nn.L1Loss()
             elif loss_type == 'RL1':
                 loss_function = RL1()
-            elif loss_type == 'AuxLoss':
-                loss_function = AuxLoss()
+            elif loss_type == 'WL1':
+                loss_function = WL1()
+            elif loss_type == 'L1GM':
+                loss_function = L1GM()
+            elif loss_type == 'L1RG':
+                loss_function = L1RG()
             elif loss_type.find('VGG') >= 0:
                 module = import_module('loss.vgg')
                 loss_function = getattr(module, 'VGG')(
                     loss_type[3:],
                     rgb_range=args.rgb_range,
                     n_colors=args.n_colors,
-                    RL1=(args.model == 'swinir_sigblock')
+                    RL1=(args.model in ['swinir_sigblock','swinir_sp'])
                 )
             elif loss_type.find('GAN') >= 0:
                 module = import_module('loss.adversarial')
                 loss_function = getattr(module, 'Adversarial')(
                     args,
                     loss_type,
-                    RL1=(args.model == 'swinir_sigblock')
+                    RL1=(args.model in ['swinir_sigblock','swinir_sp'])
+                )
+            elif loss_type.find('ganGM') >= 0:
+                module = import_module('loss.adversarial')
+                loss_function = getattr(module, 'Adversarial')(
+                    args,
+                    loss_type,
+                    RL1=(args.model in ['swinir_sigblock','swinir_sp']),
+                    GM_input=True
                 )
             elif loss_type.find('FMAE') >=0:
                 module = import_module('loss.fmae')
@@ -77,7 +130,7 @@ class Loss(nn.modules.loss._Loss):
                 loss_function = getattr(module, 'Style')(
                     rgb_range=args.rgb_range,
                     n_colors=args.n_colors,
-                    RL1=(args.model == 'swinir_sigblock'))
+                    RL1=(args.model in ['swinir_sigblock','swinir_sp']))
 
             self.loss.append({
                 'type': loss_type,

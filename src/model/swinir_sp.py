@@ -4,19 +4,23 @@
 # -----------------------------------------------------------------------------------
 
 import math
+from regex import P
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+import numpy as np
+from model import common
 
 def make_model(args, parent=False):
+    print('patch_size',args.patch_size)
     return SwinIR(img_size=args.patch_size, patch_size=1, in_chans=3, out_chans=args.output_channels,
                  embed_dim=180, depths=[6, 6, 6, 6, 6, 6], num_heads=[6, 6, 6, 6, 6, 6],
                  window_size=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, upscale=args.scale[0], img_range=255., upsampler='pixelshuffle', resi_connection='1conv')
+                 use_checkpoint=False, upscale=args.scale[0], img_range=float(args.rgb_range), upsampler='pixelshuffle', resi_connection='1conv')
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -650,7 +654,7 @@ class SwinIR(nn.Module):
         resi_connection: The convolutional block before residual connection. '1conv'/'3conv'
     """
 
-    def __init__(self, img_size=64, patch_size=1, in_chans=3,out_chans=1,
+    def __init__(self, img_size=64, patch_size=1, in_chans=3, out_chans=1,
                  embed_dim=180, depths=[6, 6, 6, 6, 6, 6], num_heads=[6, 6, 6, 6, 6, 6],
                  window_size=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
@@ -692,7 +696,6 @@ class SwinIR(nn.Module):
         num_patches = self.patch_embed.num_patches
         patches_resolution = self.patch_embed.patches_resolution
         self.patches_resolution = patches_resolution
-
         # merge non-overlapping patches into image
         self.patch_unembed = PatchUnEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=embed_dim, embed_dim=embed_dim,
@@ -743,6 +746,59 @@ class SwinIR(nn.Module):
                                                  nn.LeakyReLU(negative_slope=0.2, inplace=True),
                                                  nn.Conv2d(embed_dim // 4, embed_dim, 3, 1, 1))
 
+################################################################################
+        # gradient branch
+        self.Get_gradient = common.Get_gradient()  # input:[b,c,h,w]
+        self.conv_first_grad = nn.Conv2d(num_in_ch, embed_dim, 3, 1, 1)
+        self.layers_grad = nn.ModuleList()
+        for i_layer in range(3):  # hyparameter
+            # dim: number of input channels
+            layer = RSTB(dim=embed_dim*2,
+                         input_resolution=(patches_resolution[0],
+                                           patches_resolution[1]),
+                         depth=depths[i_layer],
+                         num_heads=num_heads[i_layer],
+                         window_size=window_size,
+                         mlp_ratio=self.mlp_ratio,
+                         qkv_bias=qkv_bias, qk_scale=qk_scale,
+                         drop=drop_rate, attn_drop=attn_drop_rate,
+                         drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],  # no impact on SR results
+                         norm_layer=norm_layer,
+                         downsample=None,
+                         use_checkpoint=use_checkpoint,
+                         img_size=img_size,
+                         patch_size=patch_size,
+                         resi_connection=resi_connection
+                         )
+            conv = nn.Conv2d(embed_dim*2, embed_dim, 3, 1, 1)
+            self.layers_grad.append(layer)
+            self.layers_grad.append(conv)
+        self.conv_last_grad = nn.Conv2d(embed_dim, embed_dim, 3, 1, 1)
+#######################################################################
+        # fusion block
+        layer = RSTB(dim=in_chans*2,
+                input_resolution=(patches_resolution[0],
+                                patches_resolution[1]),
+                depth=depths[i_layer],
+                num_heads=num_heads[i_layer],
+                window_size=window_size,
+                mlp_ratio=self.mlp_ratio,
+                qkv_bias=qkv_bias, qk_scale=qk_scale,
+                drop=drop_rate, attn_drop=attn_drop_rate,
+                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],  # no impact on SR results
+                norm_layer=norm_layer,
+                downsample=None,
+                use_checkpoint=use_checkpoint,
+                img_size=img_size,
+                patch_size=patch_size,
+                resi_connection=resi_connection
+                )
+        self.fusion_block = nn.ModuleList()
+        self.fusion_block.append(layer)
+        self.fusion_block.append(nn.Conv2d(in_chans*2, in_chans, 3, 1, 1))
+        self.conv_last_sr = nn.Sequential(*[nn.Conv2d(in_chans,out_chans,3,1,1),
+                            nn.Conv2d(out_chans,out_chans,3,1,1)])
+#######################################################################
         #####################################################################################################
         ################################ 3, high quality image reconstruction ################################
         if self.upsampler == 'pixelshuffle':
@@ -752,9 +808,12 @@ class SwinIR(nn.Module):
             self.upsample = Upsample(upscale, num_feat)
             self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
 
-            # change the output channel on the condiction of pretrained model
-            self.conv_final = nn.Conv2d(num_out_ch, out_chans,3,1,1)
-            self.act_lat = nn.Sigmoid()
+            self.conv_before_upsample_gb = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
+                                                      nn.LeakyReLU(inplace=True))
+            self.upsample_gb = Upsample(upscale, num_feat)
+            self.conv_last_gb = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+            self.conv1 = nn.Conv2d(num_out_ch,1,1,1,0)
+
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR (to save parameters)
             self.upsample = UpsampleOneStep(upscale, embed_dim, num_out_ch,
@@ -799,37 +858,82 @@ class SwinIR(nn.Module):
         x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
         return x
 
-    def forward_features(self, x):
+    def forward_features(self, x, inter_layers=[1,3,5]):
         x_size = (x.shape[2], x.shape[3])
         x = self.patch_embed(x)
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
-        for layer in self.layers:
+        inter_feature = []
+        for i,layer in enumerate(self.layers):
             x = layer(x, x_size)
+            if i in inter_layers:
+                # x = x.clone().detach()  # detach for gradient branch
+                inter_feature.append(x)
 
         x = self.norm(x)  # B L C
         x = self.patch_unembed(x, x_size)
 
+        return x, inter_feature  # list
+
+    def forward_features_grad(self, x, inter_feature):
+        x_shape = x.shape
+        x = self.Get_gradient(x)
+        x = self.conv_first_grad(x)
+        x_id = x
+
+        x_size = (x.shape[2], x.shape[3])  # [32,32]
+        x = self.patch_embed(x)
+        if self.ape:
+            x = x + self.absolute_pos_embed
+        x = self.pos_drop(x)  # [b,h*w,dim]
+        x_swin_shape = x.shape 
+        for i in range(len(inter_feature)):
+            x = torch.cat([x,inter_feature[i]], dim=2)  # [b,h*w,2*dim]
+            x = self.layers_grad[i*2](x,x_size)  # [b,h*w,2*dim]
+            x = x.transpose(1,2).view(x_swin_shape[0], x_swin_shape[2]*2, x_shape[2],x_shape[3])  # [b,2*dim, h,w]
+            x = self.layers_grad[i*2+1](x)  # [b,dim,h,w]
+            x = x.flatten(2).transpose(1,2)  # [b,h*w,dim]
+        x = self.norm(x)
+        x = x.transpose(1,2).view(x_swin_shape[0], x_swin_shape[2], x_shape[2],x_shape[3])  # [b,dim, h,w]
+        x = self.conv_last_grad(x)
+        x = x + x_id
+        x = self.conv_before_upsample_gb(x)
+        x = self.conv_last_gb(self.upsample_gb(x))
         return x
 
-    def forward(self, x):
+    def forward(self, x, mode='train'):
         H, W = x.shape[2:]
-        x = self.check_image_size(x)
-
-        self.mean = self.mean.type_as(x)
+        x = self.check_image_size(x)  # adjust the padding
+        self.mean = self.mean.type_as(x)  # change type
+        # self.mean = self.mean[:,0:1,:]
         x = (x - self.mean) * self.img_range
-
         if self.upsampler == 'pixelshuffle':
             # for classical SR
-            x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
-            x = self.conv_before_upsample(x)
-            x = self.conv_last(self.upsample(x))
-            # change the channel
-            x = self.conv_final(x)
-            # x = self.act_lat(x)
+            x_conv = self.conv_first(x)
+            x_id = x_conv
+            x_ = self.forward_features(x_conv)
+            x_srb = x_[0]
+
+            x_srf = x_[1]  # list: len=3, x_f[0].shape = [b,1024,emb_dim]
+            x_gb = self.forward_features_grad(x,x_srf)
+
+            x_srb_out = self.conv_after_body(x_srb) + x_id  # [b,dim,h,w]
+            x_srb_out = self.conv_before_upsample(x_srb_out)
+            x_srb_out = self.conv_last(self.upsample(x_srb_out))
+
+            # fusion
+            x = torch.cat([x_gb,x_srb_out], dim=1)  # [b,6,h,w]
+            x_shape = x.shape
+            x = x.flatten(2).transpose(1,2)  # [b,h*w,6]
+            x = self.fusion_block[0](x,(x_shape[2],x_shape[3]))  # [b,h*w,6]
+            x = x.transpose(1,2).view(x_shape)
+            x = self.fusion_block[1](x)  # [b,3,h,w]
+            x = self.conv_last_sr(x)  # [b,1,h,w]
+
+            x_gb_out = self.conv1(x_gb)  #[b,1,h,w]
+
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR
             x = self.conv_first(x)
@@ -850,9 +954,13 @@ class SwinIR(nn.Module):
             x = x + self.conv_last(res)
 
         if self.mean.shape[1] > x.shape[1]:
-            x = x / self.img_range + self.mean[:,0:1,:,:]
-        # x = x * self.img_range
-        return x[:, :, :H*self.upscale, :W*self.upscale]
+            mean_temp = self.mean[:,0:1,:]
+        else:
+            mean_temp = self.mean    
+        x = x / self.img_range + mean_temp
+        x_gb = self.Get_gradient(x)
+        x_gb_out = x_gb_out
+        return x[:, :, :H*self.upscale, :W*self.upscale], x_gb_out[:, :, :H*self.upscale, :W*self.upscale]
 
     def flops(self):
         flops = 0

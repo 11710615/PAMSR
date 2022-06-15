@@ -11,10 +11,10 @@ import torch.nn as nn
 import torch.nn.utils as utils
 from tqdm import tqdm
 import cv2
-from model.common import Get_gradient
+from model.common import Get_gradient, ema
+import copy
 
-
-class Trainer():
+class Trainer_ema():
     def __init__(self, args, loader, my_model, my_loss, ckp):
         self.args = args
         self.scale = args.scale
@@ -23,6 +23,13 @@ class Trainer():
         self.loader_train = loader.loader_train
         self.loader_test = loader.loader_test
         self.model = my_model
+
+        # ema model
+        self.model_ema = copy.deepcopy(self.model)  # the tensor's status is also copied
+        # self.model_ema.eval() # batchsize to 1?
+        for p in self.model_ema.parameters():
+            p.requires_grad = False
+
         self.loss = my_loss
         self.optimizer = utility.make_optimizer(args, self.model)
         self.output_channels = args.output_channels
@@ -61,7 +68,16 @@ class Trainer():
                 self.optimizer.zero_grad()
 
                 sr = self.model(lr, 0)
-                loss = self.loss(sr, hr)
+                # print('sr.shape',sr.shape,lr.shape)
+                self.model_ema = ema(self.model, self.model_ema, decay=0.999)
+                sr_ema = self.model_ema(lr,0)
+                
+                # print('sr_ema',sr_ema.shape, lr.shape)
+                # r
+                # self.model.train()
+                model_out = [sr,sr_ema]
+
+                loss = self.loss(model_out, hr)
                 loss.backward()
                 if self.args.gclip > 0:
                     utils.clip_grad_value_(
@@ -157,7 +173,6 @@ class Trainer():
 
                         if self.args.save_gm:
                             get_gm = Get_gradient().cuda()
-                            # print('hr',hr.shape,sr.shape)
                             hr_gm = get_gm(hr)
                             sr_gm = get_gm(sr)
                             save_list.extend([sr_gm, hr_gm, sr_temp[1]])
