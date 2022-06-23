@@ -72,10 +72,10 @@ class Trainer_ema():
                 self.model_ema = ema(self.model, self.model_ema, decay=0.999)
                 sr_ema = self.model_ema(lr,0)
                 
-                # print('sr_ema',sr_ema.shape, lr.shape)
-                # r
-                # self.model.train()
-                model_out = [sr,sr_ema]
+                if isinstance(sr, tuple):
+                    model_out = sr + sr_ema
+                elif isinstance(sr, list):
+                    model_out = [sr,sr_ema]
 
                 loss = self.loss(model_out, hr)
                 loss.backward()
