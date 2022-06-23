@@ -13,6 +13,7 @@ from tqdm import tqdm
 import cv2
 from model.common import Get_gradient
 
+import wandb
 
 class Trainer():
     def __init__(self, args, loader, my_model, my_loss, ckp):
@@ -33,6 +34,9 @@ class Trainer():
         self.use_mask = args.use_mask
 
     def train(self):
+
+        wandb.init(project='SPSR', name=self.args.save, entity='p3kkk', config=self.args)
+
         self.loss.step()
         epoch = self.optimizer.get_last_epoch() + 1
         lr = self.optimizer.get_lr()
@@ -61,8 +65,13 @@ class Trainer():
                 self.optimizer.zero_grad()
 
                 sr = self.model(lr, 0)
-                loss = self.loss(sr, hr)
+                loss, loss_wandb = self.loss(sr, hr)
                 loss.backward()
+
+                wandb.log({"total_loss": loss, 'epoch': epoch, 'loss': loss_wandb,
+                'input': wandb.Image(hr),
+                'sr': wandb.Image(sr.float())})
+
                 if self.args.gclip > 0:
                     utils.clip_grad_value_(
                         self.model.parameters(),
@@ -91,8 +100,13 @@ class Trainer():
                 sr = self.model(lr, 0)
                 idx = [hr_mask==0]
                 sr[idx] = 0
-                loss = self.loss(sr, hr)
+                loss, loss_wandb = self.loss(sr, hr)
                 loss.backward()
+
+                wandb.log({"total_loss": loss, 'epoch': epoch, 'loss': loss_wandb,
+                'input': wandb.Image(hr),
+                'sr': wandb.Image(sr.float())})
+
                 if self.args.gclip > 0:
                     utils.clip_grad_value_(
                         self.model.parameters(),

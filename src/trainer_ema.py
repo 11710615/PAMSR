@@ -14,8 +14,12 @@ import cv2
 from model.common import Get_gradient, ema
 import copy
 
+import wandb
+
+
 class Trainer_ema():
     def __init__(self, args, loader, my_model, my_loss, ckp):
+
         self.args = args
         self.scale = args.scale
 
@@ -40,6 +44,9 @@ class Trainer_ema():
         self.use_mask = args.use_mask
 
     def train(self):
+
+        wandb.init(project='SPSR', name=self.args.save, entity='p3kkk', config=self.args)
+
         self.loss.step()
         epoch = self.optimizer.get_last_epoch() + 1
         lr = self.optimizer.get_lr()
@@ -74,11 +81,16 @@ class Trainer_ema():
                 
                 if isinstance(sr, tuple):
                     model_out = sr + sr_ema
-                elif isinstance(sr, list):
+                else:
                     model_out = [sr,sr_ema]
-
-                loss = self.loss(model_out, hr)
+                loss, loss_wandb = self.loss(model_out, hr)
                 loss.backward()
+
+                wandb.log({"total_loss": loss, 'epoch': epoch, 'loss': loss_wandb,
+                            'input': wandb.Image(hr),
+                            'sr': wandb.Image(model_out[0].float())})
+                
+
                 if self.args.gclip > 0:
                     utils.clip_grad_value_(
                         self.model.parameters(),
