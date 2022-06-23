@@ -1,4 +1,5 @@
 from cmath import nan
+from operator import mod
 import os
 from importlib import import_module
 from turtle import forward
@@ -14,12 +15,130 @@ import torch.nn as nn
 import torch.nn.functional as F
 from model import common
 
+
+class Gradient_L1(nn.Module):
+    def __init__(self, ksize=3):
+        super(Gradient_L1, self).__init__()
+        self.ksize = ksize
+        self.l1 = nn.L1Loss()
+
+    def get_local_gradient(self, x):
+        kernel_v = [[0, -1, 0], 
+                    [0, 0, 0], 
+                    [0, 1, 0]]
+        kernel_h = [[0, 0, 0], 
+                    [-1, 0, 1], 
+                    [0, 0, 0]]
+        kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
+        kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
+        self.weight_h = nn.Parameter(data = kernel_h, requires_grad = False).cuda()
+        self.weight_v = nn.Parameter(data = kernel_v, requires_grad = False).cuda()
+        
+        x_list = []
+        # x = x.to(torch.float32)
+        for i in range(x.shape[1]):
+            x_i = x[:, i]
+            x_i_v = F.conv2d(x_i.unsqueeze(1), self.weight_v, padding=1)
+            x_i_h = F.conv2d(x_i.unsqueeze(1), self.weight_h, padding=1)
+            x_i = torch.sqrt(torch.pow(x_i_v, 2) + torch.pow(x_i_h, 2) + 1e-6)
+            x_list.append(x_i)
+        x = torch.cat(x_list, dim = 1)
+        
+        # # normalize
+        # x = (x-torch.min(x))/torch.max(x)
+        return x   
+
+    def forward(self,output,hr):
+        if isinstance(output,list):
+            sr = output[0]
+            sr_ema = output[1]
+        else:
+            sr = output[0]
+            sr_ema = output[2]
+        residual_ema = torch.sum(torch.abs(hr - sr_ema), 1, keepdim=True) / 255
+        residual_SR = torch.sum(torch.abs(hr - sr), 1, keepdim=True) / 255
+
+        pixel_level_gradient = self.get_local_gradient(hr.clone().detach())
+        overall_weight = pixel_level_gradient
+        # normalize
+        eps = 1e-6
+        overall_weight = (overall_weight-torch.min(overall_weight))/(torch.max(overall_weight)+eps)
+        overall_weight[residual_SR < residual_ema] = 0
+        out = self.l1(overall_weight*sr, overall_weight*hr)
+        return out
+
+
+class Gradient_WL1(nn.Module):
+    def __init__(self, ksize=3):
+        super(Gradient_WL1, self).__init__()
+        self.ksize = ksize
+        self.l1 = nn.L1Loss()
+    def get_local_weights(self,residual, ksize=7):
+        ksize = self.ksize
+        pad = (ksize - 1) // 2
+        residual_pad = F.pad(residual, pad=[pad, pad, pad, pad], mode='reflect')
+        unfolded_residual = residual_pad.unfold(2, ksize, 1).unfold(3, ksize, 1)
+        pixel_level_weight = torch.var(unfolded_residual, dim=(-1, -2), unbiased=True, keepdim=True).squeeze(-1).squeeze(-1)
+        return pixel_level_weight
+
+    def get_local_gradient(self, x):
+        kernel_v = [[0, -1, 0], 
+                    [0, 0, 0], 
+                    [0, 1, 0]]
+        kernel_h = [[0, 0, 0], 
+                    [-1, 0, 1], 
+                    [0, 0, 0]]
+        kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
+        kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
+        self.weight_h = nn.Parameter(data = kernel_h, requires_grad = False).cuda()
+        self.weight_v = nn.Parameter(data = kernel_v, requires_grad = False).cuda()
+        
+        x_list = []
+        # x = x.to(torch.float32)
+        for i in range(x.shape[1]):
+            x_i = x[:, i]
+            x_i_v = F.conv2d(x_i.unsqueeze(1), self.weight_v, padding=1)
+            x_i_h = F.conv2d(x_i.unsqueeze(1), self.weight_h, padding=1)
+            x_i = torch.sqrt(torch.pow(x_i_v, 2) + torch.pow(x_i_h, 2) + 1e-6)
+            x_list.append(x_i)
+        x = torch.cat(x_list, dim = 1)
+        
+        # # normalize
+        # x = (x-torch.min(x))/torch.max(x)
+        
+        return x
+
+    def forward(self,output,hr):
+        if isinstance(output,list):
+            sr = output[0]
+            sr_ema = output[1]
+        else:
+            sr = output[0]
+            sr_ema = output[2]
+        residual_ema = torch.sum(torch.abs(hr - sr_ema), 1, keepdim=True) / 255
+        residual_SR = torch.sum(torch.abs(hr - sr), 1, keepdim=True) / 255
+
+        # need to detach, else nan will appear
+        patch_level_weight = torch.var(residual_SR.clone().detach(), dim=(-1, -2, -3), keepdim=True) ** (1/5)
+        pixel_level_weight = self.get_local_weights(residual_SR.clone().detach(), self.ksize)
+        pixel_level_gradient = self.get_local_gradient(hr.clone().detach())
+        overall_weight = patch_level_weight * pixel_level_weight * pixel_level_gradient
+
+        # normalize
+        eps = 1e-6
+        overall_weight = (overall_weight-torch.min(overall_weight))/(torch.max(overall_weight)+eps)
+
+        overall_weight[residual_SR < residual_ema] = 0
+        out = self.l1(overall_weight*sr, overall_weight*hr)
+        return out
+
 class WL1(nn.Module):
-    def __init__(self, ksize=7):
+    def __init__(self, ksize=3):
         super(WL1, self).__init__()
         self.ksize = ksize
         self.l1 = nn.L1Loss()
     def get_local_weights(self,residual, ksize=7):
+        ksize = self.ksize
         pad = (ksize - 1) // 2
         residual_pad = F.pad(residual, pad=[pad, pad, pad, pad], mode='reflect')
         unfolded_residual = residual_pad.unfold(2, ksize, 1).unfold(3, ksize, 1)
@@ -27,8 +146,12 @@ class WL1(nn.Module):
         return pixel_level_weight
 
     def forward(self,output,hr):
-        sr = output[0]
-        sr_ema = output[1]
+        if isinstance(output,list):
+            sr = output[0]
+            sr_ema = output[1]
+        else:
+            sr = output[0]
+            sr_ema = output[2]
         residual_ema = torch.sum(torch.abs(hr - sr_ema), 1, keepdim=True) / 255
         residual_SR = torch.sum(torch.abs(hr - sr), 1, keepdim=True) / 255
 
@@ -37,12 +160,60 @@ class WL1(nn.Module):
         pixel_level_weight = self.get_local_weights(residual_SR.clone().detach(), self.ksize)
         overall_weight = patch_level_weight * pixel_level_weight
 
+        # # normalize
+        # eps = 1e-6
+        # overall_weight = (overall_weight-torch.min(overall_weight))/(torch.max(overall_weight)+eps)
+        # # inverse
+        
         overall_weight[residual_SR < residual_ema] = 0
         out = self.l1(overall_weight*sr, overall_weight*hr)
 
         # print('output',torch.max(overall_weight),out,torch.max(patch_level_weight),torch.max(pixel_level_weight))
         # r
         return out
+
+
+class InvWL1(nn.Module):
+    def __init__(self, ksize=3):
+        super(InvWL1, self).__init__()
+        self.ksize = ksize
+        self.l1 = nn.L1Loss()
+    def get_local_weights(self,residual, ksize=7):
+        ksize = self.ksize
+        pad = (ksize - 1) // 2
+        residual_pad = F.pad(residual, pad=[pad, pad, pad, pad], mode='reflect')
+        unfolded_residual = residual_pad.unfold(2, ksize, 1).unfold(3, ksize, 1)
+        pixel_level_weight = torch.var(unfolded_residual, dim=(-1, -2), unbiased=True, keepdim=True).squeeze(-1).squeeze(-1)
+        return pixel_level_weight
+
+    def forward(self,output,hr):
+        if isinstance(output,list):
+            sr = output[0]
+            sr_ema = output[1]
+        else:
+            sr = output[0]
+            sr_ema = output[2]
+        residual_ema = torch.sum(torch.abs(hr - sr_ema), 1, keepdim=True) / 255
+        residual_SR = torch.sum(torch.abs(hr - sr), 1, keepdim=True) / 255
+
+        # need to detach, else nan will appear
+        patch_level_weight = torch.var(residual_SR.clone().detach(), dim=(-1, -2, -3), keepdim=True) ** (1/5)
+        pixel_level_weight = self.get_local_weights(residual_SR.clone().detach(), self.ksize)
+        overall_weight = patch_level_weight * pixel_level_weight
+
+        # normalize
+        eps = 1e-6
+        overall_weight = (overall_weight-torch.min(overall_weight))/(torch.max(overall_weight)+eps)
+        # inverse
+        overall_weight = 1 - (overall_weight > 0.01) * overall_weight + (overall_weight <= 0.01) * (overall_weight - 1)
+
+        overall_weight[residual_SR < residual_ema] = 0
+        out = self.l1(overall_weight*sr, overall_weight*hr)
+
+        # print('output',torch.max(overall_weight),out,torch.max(patch_level_weight),torch.max(pixel_level_weight))
+        # r
+        return out
+
 
 # rewrite L1 loss
 class RL1(nn.Module):
@@ -73,7 +244,8 @@ class L1RG(nn.Module):
         rec_gm=out[1]
         hr_gm = self.gm(hr)
         return self.l1(rec_gm,hr_gm)
-        
+
+
 # torch.autograd.set_detect_anomaly(True)
 class Loss(nn.modules.loss._Loss):
     def __init__(self, args, ckp):
@@ -94,6 +266,12 @@ class Loss(nn.modules.loss._Loss):
                 loss_function = RL1()
             elif loss_type == 'WL1':
                 loss_function = WL1()
+            elif loss_type == 'InvWL1':
+                loss_function = InvWL1()
+            elif loss_type == 'Gradient_WL1':
+                loss_function = Gradient_WL1()
+            elif loss_type == 'Gradient_L1':
+                loss_function = Gradient_L1()
             elif loss_type == 'L1GM':
                 loss_function = L1GM()
             elif loss_type == 'L1RG':
@@ -123,14 +301,16 @@ class Loss(nn.modules.loss._Loss):
                 )
             elif loss_type.find('FMAE') >=0:
                 module = import_module('loss.fmae')
-                loss_function = getattr(module,'FMAE')()  # 无需参数的实例化
-
+                loss_function = getattr(module,'FMAE')()  # 无需参数的实例
             elif loss_type.find('Style') >= 0:
                 module = import_module('loss.style')
                 loss_function = getattr(module, 'Style')(
                     rgb_range=args.rgb_range,
                     n_colors=args.n_colors,
-                    RL1=(args.model in ['swinir_sigblock','swinir_sp']))
+                    RL1=(args.model in ['swinir_sigblock','swinir_sp']))       
+            elif loss_type.find('topology') >= 0:
+                module = import_module('loss.topology')
+                loss_function = getattr(module, 'topology')()
 
             self.loss.append({
                 'type': loss_type,

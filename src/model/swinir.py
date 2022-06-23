@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------------
 
 import math
+from regex import R
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -818,9 +819,11 @@ class SwinIR(nn.Module):
         H, W = x.shape[2:]
         x = self.check_image_size(x)
 
-        self.mean = self.mean.type_as(x)
-        x = (x - self.mean) * self.img_range
-
+        # self.mean = self.mean.type_as(x)
+        # x = (x - self.mean) * self.img_range
+        x = x / self.img_range  # [0,1]
+        # print('img_range', torch.max(x), torch.min(x))
+        # r
         if self.upsampler == 'pixelshuffle':
             # for classical SR
             x = self.conv_first(x)
@@ -829,7 +832,7 @@ class SwinIR(nn.Module):
             x = self.conv_last(self.upsample(x))
             # change the channel
             x = self.conv_final(x)
-            # x = self.act_lat(x)
+            x = self.act_lat(x) # [0,1]
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR
             x = self.conv_first(x)
@@ -849,8 +852,8 @@ class SwinIR(nn.Module):
             res = self.conv_after_body(self.forward_features(x_first)) + x_first
             x = x + self.conv_last(res)
 
-        if self.mean.shape[1] > x.shape[1]:
-            x = x / self.img_range + self.mean[:,0:1,:,:]
+
+        x = x * self.img_range  # [0,255]
         # x = x * self.img_range
         return x[:, :, :H*self.upscale, :W*self.upscale]
 

@@ -160,6 +160,7 @@ class checkpoint():
             else:
                 postfix = ('SR', 'LR', 'HR')
             for v, p in zip(save_list, postfix):
+                # print('output_shape',v[0].shape)
                 normalized = v[0].mul(255 / self.args.rgb_range)  #
                 tensor_cpu = normalized.byte().permute(1, 2, 0).cpu()
                 self.queue.put(('{}{}.png'.format(filename, p), tensor_cpu))

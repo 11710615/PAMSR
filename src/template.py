@@ -1,3 +1,4 @@
+from enum import Flag
 from pickle import TRUE
 
 
@@ -77,9 +78,12 @@ def set_template(args):
         args.patch_size = 64
         args.chop = True
         args.use_ema = True
-        # args.save = 'swinir_ema_x' + args.scale + '_' + args.loss
-    
-    
+        args.scale = '2'
+        args.loss = '200*WL1+4*VGG54+0.1*GAN'
+        args.save = 'swinir_ema_x' + args.scale + '_' + args.loss
+        args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
+        # args.pre_train = '../experiment/swinir_ema_x2_200*WL1+4*VGG54+0.1*GAN_2/model/model_best.pt'
+
     if args.template.find('swinir_ema_x4') >= 0:
         args.scale = '4'
         args.model = 'SwinIR'
@@ -87,7 +91,75 @@ def set_template(args):
         args.chop = True
         args.use_ema = True
         args.save = 'swinir_ema_x4' + '_' + args.loss
+        args.loss = '200*WL1+4*VGG54+0.1*GAN'
+        args.pre_train = '../experiment/swinir_ema_x2_' + args.loss + '/model/model_best.pt'
+
+    if args.template.find('swinir_inv_ema') >= 0:
+        args.model = 'SwinIR'
+        args.patch_size = 64
+        args.chop = True
+        args.use_ema = True
+        args.scale = '2'
+        args.loss = '2*InvWL1+4*VGG54+0.1*GAN' # 50? 10? 2.5? 2?
+        args.save = 'swinir_inv_ema_x' + args.scale + '_' + args.loss
+        # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
+        args.pre_train = '../experiment/swinir_inv_ema_x2_'+ args.loss +'/model/model_best.pt'
+
+    if args.template.find('swinir_ema_topology') >= 0:
+        args.model = 'SwinIR'
+        args.patch_size = 64
+        args.chop = True
+        args.use_ema = True
+        args.scale = '2'
+        args.loss = '1*topology+5*VGG54+0.1*GAN'
+        args.save = 'swinir_ema_topology_x' + args.scale + '_' + args.loss
+        # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
+        args.pre_train = '../experiment/swinir_ema_topology_x2_' + args.loss + '/model/model_best.pt'
+
+    if args.template.find('swinir_ema_GradientWL1') >= 0:
+        args.model = 'SwinIR'
+        args.patch_size = 64
+        args.chop = True
+        args.use_ema = True
+        args.scale = '2'
+        args.loss = '40*Gradient_WL1+4*VGG54+0.1*GAN'  # 40L1?
+        args.save = 'swinir_ema_x' + args.scale + '_' + args.loss
+        # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
+        args.pre_train = '../experiment/swinir_ema_x2_' + args.loss + '/model/model_best.pt'
+
+    if args.template.find('swinir_ema_GradientWL1_x4') >= 0:
+        args.model = 'SwinIR'
+        args.patch_size = 64
+        args.chop = True
+        args.use_ema = True
+        args.scale = '4'
+        args.loss = '40*Gradient_WL1+4*VGG54+0.1*GAN'
+        args.save = 'swinir_ema_x' + args.scale + '_' + args.loss
+        # args.pre_train = '../experiment/swinir_ema_x4_' + args.loss + '/model/model_best.pt'
+        args.pre_train = '../experiment/swinir_ema_x2_' + args.loss + '/model/model_best.pt'
     
+    if args.template.find('swinir_ema_GradientL1') >= 0:
+        args.model = 'SwinIR'
+        args.patch_size = 64
+        args.chop = True
+        args.use_ema = True
+        args.scale = '2'
+        args.loss = '10*Gradient_L1+4*VGG54+0.1*GAN'  # 10L1? 40:bury
+        args.save = 'swinir_ema_x' + args.scale + '_' + args.loss
+        # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
+        args.pre_train = '../experiment/swinir_ema_x2_' + args.loss + '/model/model_best.pt'
+
+    if args.template.find('swinir_ema_GradientL1_x4') >= 0:
+        args.model = 'SwinIR'
+        args.patch_size = 64
+        args.chop = True
+        args.use_ema = True
+        args.scale = '4'
+        args.loss = '10*Gradient_L1+4*VGG54+0.1*GAN'
+        args.save = 'swinir_ema_x' + args.scale + '_' + args.loss
+        # args.pre_train = '../experiment/swinir_ema_x4_' + args.loss + '/model/model_best.pt'
+        args.pre_train = '../experiment/swinir_ema_x2_' + args.loss + '/model/model_best.pt'
+
     if args.template.find('swinir_real') >= 0:
         args.model = 'SwinIR'
         args.patch_size = 64
@@ -108,23 +180,52 @@ def set_template(args):
         args.patch_size = 64
         args.chop = False
         args.output_channels = 1
-        
-    
+        args.save = 'test_11'
+        args.loss = '1*RL1+4*VGG54+0.5*GAN+1*L1GM+0.5*ganGM+1*L1RG'
+
     if args.template.find('swinir_hf_x4') >= 0:
         args.model = 'swinir_sp'
         args.patch_size = 64
-        args.chop = True
+        # args.chop = False
         args.output_channels = 1
         args.scale = '4'
         args.save = 'swinir_hf_x4'
-        args.reset = True
+        # args.reset = True
 
-    if args.template.find('swinir_sp_div2k') >= 0:
+    # if args.template.find('swinir_sp_div2k') >= 0:
+    #     args.model = 'swinir_sp'
+    #     args.patch = 64
+    #     args.chop = True
+    #     args.data_train = 'DIV2K_train'
+    #     args.data_test = 'DIV2K_valid'
+    #     args.data_range = '1-800/1-100'
+    #     args.output_channels = 3
+    #     args.batch_size = 3
+
+    if args.template.find('swinir_sp_ema_x2') >= 0:
         args.model = 'swinir_sp'
-        args.patch = 64
-        args.chop = True
-        args.data_train = 'DIV2K_train'
-        args.data_test = 'DIV2K_valid'
-        args.data_range = '1-800/1-100'
-        args.output_channels = 3
-        args.batch_size = 3
+        args.patch_size = 64
+        args.chop = False  # multi output does not use chop
+        args.output_channels = 1
+        args.use_ema = True
+        # args.loss = '200*WL1+4*VGG54+0.1*GAN'
+        # args.loss = '1*RL1+4*VGG54+0.5*GAN+1*L1GM+0.5*ganGM+1*L1RG'
+        args.loss = '100*WL1+2*VGG54+0.1*GAN+0.5*L1GM+0.1*ganGM+0.5*L1RG'
+        args.save = 'swinir_sp_ema_x2'
+        # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
+        args.pre_train = '../experiment/swinir_sp_ema_x2/model/model_best.pt'
+        args.scale = '2'
+
+    if args.template.find('swinir_sp_ema_x4') >= 0:
+        args.model = 'swinir_sp'
+        args.patch_size = 64
+        args.chop = False
+        args.output_channels = 1
+        args.use_ema = True
+        # args.loss = '200*WL1+4*VGG54+0.1*GAN'
+        # args.loss = '1*RL1+4*VGG54+0.5*GAN+1*L1GM+0.5*ganGM+1*L1RG'
+        args.loss = '200*WL1+2*VGG54+0.1*GAN+0.5*L1GM+0.1*ganGM+0.5*L1RG'
+        args.save = 'swinir_sp_ema_x4'
+        args.pre_train = '../experiment/swinir_sp_ema_x4/model/model_best.pt'
+        # args.pre_train = '../experiment/swinir_sp_ema_x2/model/model_best.pt'
+        args.scale = '4'

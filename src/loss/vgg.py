@@ -25,7 +25,7 @@ class VGG(nn.Module):
     def forward(self, sr, hr):
         if hr.shape[1]==1:  # vgg input must have 3 channels
             hr = hr.repeat(1,3,1,1)
-        if self.RL1 is True:
+        if self.RL1 is True:  # len(tensor) = tensor.shape[0]
             sr = sr[0]
         if isinstance(sr,list):
             sr = sr[0]

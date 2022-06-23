@@ -813,6 +813,7 @@ class SwinIR(nn.Module):
             self.upsample_gb = Upsample(upscale, num_feat)
             self.conv_last_gb = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
             self.conv1 = nn.Conv2d(num_out_ch,1,1,1,0)
+            self.act_lat = nn.Sigmoid()
 
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR (to save parameters)
@@ -906,9 +907,9 @@ class SwinIR(nn.Module):
     def forward(self, x, mode='train'):
         H, W = x.shape[2:]
         x = self.check_image_size(x)  # adjust the padding
-        self.mean = self.mean.type_as(x)  # change type
+        # self.mean = self.mean.type_as(x)  # change type
         # self.mean = self.mean[:,0:1,:]
-        x = (x - self.mean) * self.img_range
+        x = x / self.img_range
         if self.upsampler == 'pixelshuffle':
             # for classical SR
             x_conv = self.conv_first(x)
@@ -922,6 +923,7 @@ class SwinIR(nn.Module):
             x_srb_out = self.conv_after_body(x_srb) + x_id  # [b,dim,h,w]
             x_srb_out = self.conv_before_upsample(x_srb_out)
             x_srb_out = self.conv_last(self.upsample(x_srb_out))
+            
 
             # fusion
             x = torch.cat([x_gb,x_srb_out], dim=1)  # [b,6,h,w]
@@ -932,7 +934,11 @@ class SwinIR(nn.Module):
             x = self.fusion_block[1](x)  # [b,3,h,w]
             x = self.conv_last_sr(x)  # [b,1,h,w]
 
+            # act to 0,1
+            x = self.act_lat(x)
+
             x_gb_out = self.conv1(x_gb)  #[b,1,h,w]
+            x_gb_out = self.act_lat(x_gb_out)
 
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR
@@ -953,13 +959,17 @@ class SwinIR(nn.Module):
             res = self.conv_after_body(self.forward_features(x_first)) + x_first
             x = x + self.conv_last(res)
 
-        if self.mean.shape[1] > x.shape[1]:
-            mean_temp = self.mean[:,0:1,:]
-        else:
-            mean_temp = self.mean    
-        x = x / self.img_range + mean_temp
+        # if self.mean.shape[1] > x.shape[1]:
+        #     mean_temp = self.mean[:,0:1,:]
+        # else:
+        #     mean_temp = self.mean    
+        x = x * self.img_range
         x_gb = self.Get_gradient(x)
-        x_gb_out = x_gb_out
+        x_gb_out = x_gb_out * self.img_range
+        # print('x',torch.max(x),torch.min(x))
+        # print('x',torch.max(x_gb_out),torch.min(x_gb_out))
+
+        # return x[:, :, :H*self.upscale, :W*self.upscale], x_gb_out[:, :, :H*self.upscale, :W*self.upscale]
         return x[:, :, :H*self.upscale, :W*self.upscale], x_gb_out[:, :, :H*self.upscale, :W*self.upscale]
 
     def flops(self):
