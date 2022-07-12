@@ -1,4 +1,5 @@
 from importlib import import_module
+from cv2 import split
 #from dataloader import MSDataLoader
 from torch.utils.data import dataloader
 from torch.utils.data import ConcatDataset
@@ -7,7 +8,8 @@ from torch.utils.data import ConcatDataset
 class MyConcatDataset(ConcatDataset):
     def __init__(self, datasets):
         super(MyConcatDataset, self).__init__(datasets)
-        self.train = datasets[0].train
+        if not datasets[0].name in ['BurstSRDataset']:
+            self.train = datasets[0].train
 
     def set_scale(self, idx_scale):
         for d in self.datasets:
@@ -18,11 +20,16 @@ class Data:
         self.loader_train = None
         if not args.test_only:
             datasets = []
-            for d in args.data_train:
-                module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
-                m = import_module('data.' + module_name.lower())
-                datasets.append(getattr(m, module_name)(args, name=d))
-
+            for d in args.data_train:  # 'BVMedV4'
+                if d in ['burst']:
+                    module_name = d
+                    m = import_module('data.'+module_name.lower())
+                    datasets.append(getattr(m, 'BurstSRDataset')(args, split='train'))
+                else:
+                    module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
+                    m = import_module('data.' + module_name.lower())
+                    datasets.append(getattr(m, module_name)(args, name=d))
+             
             self.loader_train = dataloader.DataLoader(
                 MyConcatDataset(datasets),
                 batch_size=args.batch_size,
@@ -36,6 +43,10 @@ class Data:
             if d in ['Set5', 'Set14', 'B100', 'Urban100']:
                 m = import_module('data.benchmark')
                 testset = getattr(m, 'Benchmark')(args, train=False, name=d)
+            elif d in ['burst']:
+                module_name = d
+                m = import_module('data.' + module_name.lower())
+                testset = getattr(m, 'BurstSRDataset')(args, split='val')
             else:
                 module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
                 m = import_module('data.' + module_name.lower())

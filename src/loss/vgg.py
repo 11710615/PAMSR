@@ -34,12 +34,7 @@ class VGG(nn.Module):
         # if torch.max(hr) > 1:
         #     sr = sr / 255
         #     hr = hr / 255
-        def _forward(x):
-            if self.n_colors == 3:
-                pass
-            else:
-                x = x.repeat(1,3,1,1)
-                
+        def _forward(x):                
             x = self.sub_mean(x)
             x = self.vgg(x)
             return x

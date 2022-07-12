@@ -105,6 +105,18 @@ def set_template(args):
         # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
         args.pre_train = '../experiment/swinir_inv_ema_x2_'+ args.loss +'/model/model_best.pt'
 
+    if args.template.find('swinir_inv_ema_x4') >= 0:
+        args.model = 'SwinIR'
+        args.patch_size = 64
+        args.chop = True
+        args.use_ema = True
+        args.scale = '4'
+        args.loss = '2*InvWL1+4*VGG54+0.1*GAN' # 50? 10? 2.5? 2?
+        args.save = 'swinir_inv_ema_x' + args.scale + '_' + args.loss
+        # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
+        # args.pre_train = '../experiment/swinir_inv_ema_x2_'+ args.loss +'/model/model_best.pt'
+        args.pre_train = '../experiment/swinir_inv_ema_x4_'+ args.loss +'/model/model_best.pt'
+
     if args.template.find('swinir_ema_topology') >= 0:
         args.model = 'SwinIR'
         args.patch_size = 64
@@ -229,3 +241,37 @@ def set_template(args):
         args.pre_train = '../experiment/swinir_sp_ema_x4_'+ args.loss+'/model/model_best.pt'
         # args.pre_train = '../experiment/swinir_sp_ema_x2_'+ args.loss+'/model/model_best.pt'
         args.scale = '4'
+
+    if args.template.find('bipnet_x2') >= 0:
+        args.model = 'bipnet'
+        args.patch_size = 64
+        args.num_features = 64
+        args.burst_size = 15
+        args.scale = '2'
+        args.loss = '10*L1+1*VGG54'
+        args.output_channels = 1
+        args.chop = False
+        args.save = 'bipnet_x2_burst-' + str(args.burst_size)+ '_' + args.loss
+        args.data_train = 'burst'
+        args.data_test = 'burst'
+        args.batch_size = 1
+        args.rgb_range = 1
+        # args.pre_train = '../experiment/bipnet_x2_burst-'+ str(args.burst_size) + '_' + args.loss+'/model/model_best.pt'
+
+
+    if args.template.find('bipnet_swinir_x2') >= 0:
+        args.model = 'swinir_burst'
+        args.patch_size = 64
+        args.num_features = 180
+        args.burst_size = 5
+        args.scale = '2'
+        args.loss = '10*L1+1*VGG54'
+        args.output_channels = 1
+        args.chop = True
+        args.save = 'bipnet_swinir_x2_burst-' + str(args.burst_size)+ '_' + args.loss
+        args.data_train = 'burst'
+        args.data_test = 'burst'
+        args.batch_size = 1
+        args.rgb_range = 1
+        args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
+        # args.pre_train = '../experiment/bipnet_x2_burst-'+ str(args.burst_size) + '_' + args.loss+'/model/model_best.pt'

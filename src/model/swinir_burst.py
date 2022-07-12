@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------------
 
 import math
+# from regex import R
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,12 +12,169 @@ import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 def make_model(args, parent=False):
-    return SwinIR_CA(img_size=args.patch_size, patch_size=1, in_chans=3,
-                 embed_dim=180, depths=[6, 6, 6, 6, 6, 6], num_heads=[6, 6, 6, 6, 6, 6],
+    return SwinIR_burst(img_size=args.patch_size, patch_size=1, in_chans=1, out_chans=args.output_channels,
+                 embed_dim=args.num_features, depths=[6, 6, 6, 6, 6, 6], num_heads=[6, 6, 6, 6, 6, 6],
                  window_size=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
-                 norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, upscale=args.scale[0], img_range=1., upsampler='pixelshuffle', resi_connection='1conv')
+                 norm_layer=nn.LayerNorm, ape=False, patch_norm=True, burst_size=args.burst_size,
+                 use_checkpoint=False, upscale=args.scale[0], img_range=args.rgb_range, upsampler='pixelshuffle', resi_connection='1conv')
+
+##############################################################################################
+######################### Multi-scale Feature Extractor ##########################################
+##############################################################################################
+class RGCAB(nn.Module):
+    def __init__(self, num_features, num_rcab, reduction):
+        super(RGCAB, self).__init__()
+        self.module = [RGCA(num_features, reduction) for _ in range(num_rcab)]
+        self.module.append(nn.Conv2d(num_features, num_features, kernel_size=3, padding=1, bias=False))
+        self.module = nn.Sequential(*self.module)
+
+    def forward(self, x):
+        return x + self.module(x)
+
+class RGCA(nn.Module):
+    def __init__(self, n_feat, reduction=8, bias=False, act=nn.LeakyReLU(negative_slope=0.2,inplace=True), groups =1):
+
+        super(RGCA, self).__init__()
+
+        self.n_feat = n_feat
+        self.groups = groups
+        self.reduction = reduction
+
+        modules_body = [nn.Conv2d(n_feat, n_feat, 3,1,1 , bias=bias, groups=groups), act, nn.Conv2d(n_feat, n_feat, 3,1,1 , bias=bias, groups=groups)]
+        self.body   = nn.Sequential(*modules_body)
+
+        self.gcnet = nn.Sequential(GCA(n_feat, n_feat))
+        self.conv1x1 = nn.Conv2d(n_feat, n_feat, kernel_size=1, bias=bias)
+
+    def forward(self, x):
+        res = self.body(x)
+        res = self.gcnet(res)
+        res = self.conv1x1(res)
+        res += x
+        return res
+
+
+######################### Global Context Attention ##########################################
+
+class GCA(nn.Module):
+    def __init__(self, inplanes, planes, act=nn.LeakyReLU(negative_slope=0.2,inplace=True), bias=False):
+        super(GCA, self).__init__()
+
+        self.conv_mask = nn.Conv2d(inplanes, 1, kernel_size=1, bias=bias)
+        self.softmax = nn.Softmax(dim=2)
+
+        self.channel_add_conv = nn.Sequential(
+            nn.Conv2d(inplanes, planes, kernel_size=1, bias=bias),
+            act,
+            nn.Conv2d(planes, inplanes, kernel_size=1, bias=bias)
+        )
+
+    def spatial_pool(self, x):
+        batch, channel, height, width = x.size()
+        input_x = x
+        # [N, C, H * W]
+        input_x = input_x.view(batch, channel, height * width)
+        # [N, 1, C, H * W]
+        input_x = input_x.unsqueeze(1)
+        # [N, 1, H, W]
+        context_mask = self.conv_mask(x)
+        # [N, 1, H * W]
+        context_mask = context_mask.view(batch, 1, height * width)
+        # [N, 1, H * W]
+        context_mask = self.softmax(context_mask)
+        # [N, 1, H * W, 1]
+        context_mask = context_mask.unsqueeze(3)
+        # [N, 1, C, 1]
+        context = torch.matmul(input_x, context_mask)
+        # [N, C, 1, 1]
+        context = context.view(batch, channel, 1, 1)
+
+        return context
+
+    def forward(self, x):
+        # [N, C, 1, 1]
+        context = self.spatial_pool(x)
+
+        # [N, C, 1, 1]
+        channel_add_term = self.channel_add_conv(context)
+        x = x + channel_add_term
+
+        return x
+
+
+class UpSample(nn.Module):
+
+    def __init__(self, in_channels, chan_factor, bias=False):
+        super(UpSample, self).__init__()
+
+        self.up = nn.Sequential(nn.Conv2d(in_channels, int(in_channels/chan_factor), 1, stride=1, padding=0, bias=bias),
+                                 nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True))
+
+    def forward(self, x):
+        x = self.up(x)
+        return x
+
+class DownSample(nn.Module):
+    def __init__(self, in_channels, chan_factor, bias=False):
+        super(DownSample, self).__init__()
+
+        self.down = nn.Sequential(nn.AvgPool2d(2, ceil_mode=True, count_include_pad=False),
+                                nn.Conv2d(in_channels, int(in_channels*chan_factor), 1, stride=1, bias=bias))
+
+    def forward(self, x):
+        x = self.down(x)
+        return x
+
+class MSF(nn.Module):
+    def __init__(self, in_channels=64, reduction=8, bias=False):
+        super(MSF, self).__init__()
+        
+        self.feat_ext1 = nn.Sequential(*[RGCAB(in_channels, 2, reduction) for _ in range(2)])
+        
+        self.down1 = DownSample(in_channels, chan_factor=1.5)
+        self.feat_ext2 = nn.Sequential(*[RGCAB(int(in_channels*1.5), 2, reduction) for _ in range(2)])
+        
+        self.down2 = DownSample(int(in_channels*1.5), chan_factor=1.5)
+        self.feat_ext3 = nn.Sequential(*[RGCAB(int(in_channels*1.5*1.5), 2, reduction) for _ in range(1)])
+               
+        self.up2 = UpSample(int(in_channels*1.5*1.5), chan_factor=1.5)
+        self.feat_ext5 = nn.Sequential(*[RGCAB(int(in_channels*1.5), 2, reduction) for _ in range(2)])
+        
+        self.up1 = UpSample(int(in_channels*1.5), chan_factor=1.5)
+        self.feat_ext6 = nn.Sequential(*[RGCAB(in_channels, 2, reduction) for _ in range(2)])
+        
+    def forward(self, x):
+        # print('***1',x.shape)
+
+        x = self.feat_ext1(x)
+        # print('***2',x.shape)
+
+        enc_1 = self.down1(x)
+        # print('***3',enc_1.shape)
+
+        enc_1 = self.feat_ext2(enc_1)
+        # print('***4',enc_1.shape)
+
+        enc_2 = self.down2(enc_1)
+        # print('***5',enc_2.shape)
+
+        enc_2 = self.feat_ext3(enc_2)
+        # print('***6',enc_2.shape)
+
+        dec_2 = self.up2(enc_2)
+        # print('***7',dec_2.shape)
+
+        dec_2 = self.feat_ext5(dec_2 + enc_1)
+
+        dec_1 = self.up1(dec_2)
+        dec_2 = self.feat_ext6(dec_1 + x)
+        
+        return dec_2
+
+##############################################################################################
+############################################ Swinir ##########################################
+##############################################################################################
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -168,26 +326,6 @@ class WindowAttention(nn.Module):
         return flops
 
 
-class ChannalAttentionBlock(nn.Module):
-    def __init__(self, input_nc, reduction=16):
-        super().__init__()
-
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        # feature channel downscale and upscale --> channel weight
-        self.conv_du = nn.Sequential(
-                nn.Conv2d(input_nc, input_nc // reduction, 1, padding=0, bias=True),
-                nn.GELU(),  # 适配transformer
-                nn.Conv2d(input_nc // reduction, input_nc, 1, padding=0, bias=True),
-                nn.Sigmoid()
-        )
-    
-    def forward(self,x):
-        y = self.avg_pool(x)
-        y = self.conv_du(y)
-
-        return x*y
-
-
 class SwinTransformerBlock(nn.Module):
     r""" Swin Transformer Block.
 
@@ -272,14 +410,6 @@ class SwinTransformerBlock(nn.Module):
         x = self.norm1(x)
         x = x.view(B, H, W, C)
 
-        # add channel attention to increase pixel range
-        x_ca = x.permute(0,3,1,2)
-        CA = ChannalAttentionBlock(input_nc=C, reduction=16).to(x.device)
-        x_ca = CA(x_ca)
-        x_ca = x_ca.permute(0,2,3,1)
-        x_ca = x_ca.view(B, -1, C)
-        # print('x_Ca',x_ca.shape)
-        # print('shortcut',shortcut.shape)
         # cyclic shift
         if self.shift_size > 0:
             shifted_x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
@@ -308,7 +438,7 @@ class SwinTransformerBlock(nn.Module):
         x = x.view(B, H * W, C)
 
         # FFN
-        x = shortcut + self.drop_path(x) + x_ca
+        x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
         return x
@@ -650,7 +780,7 @@ class UpsampleOneStep(nn.Sequential):
         return flops
 
 
-class SwinIR_CA(nn.Module):
+class SwinIR_burst(nn.Module):
     r""" SwinIR
         A PyTorch impl of : `SwinIR: Image Restoration Using Swin Transformer`, based on Swin Transformer.
 
@@ -678,16 +808,16 @@ class SwinIR_CA(nn.Module):
         resi_connection: The convolutional block before residual connection. '1conv'/'3conv'
     """
 
-    def __init__(self, img_size=48, patch_size=1, in_chans=3,
+    def __init__(self, img_size=64, patch_size=1, in_chans=1, out_chans=1,
                  embed_dim=180, depths=[6, 6, 6, 6, 6, 6], num_heads=[6, 6, 6, 6, 6, 6],
                  window_size=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
-                 norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, upscale=2, img_range=1., upsampler='pixelshuffle', resi_connection='1conv',
+                 norm_layer=nn.LayerNorm, ape=False, patch_norm=True, burst_size=15,
+                 use_checkpoint=False, upscale=2, img_range=255., upsampler='pixelshuffle', resi_connection='1conv',
                  **kwargs):
 
-        super(SwinIR_CA, self).__init__()
-        num_in_ch = in_chans
+        super(SwinIR_burst, self).__init__()
+        # num_in_ch = in_chans
         num_out_ch = in_chans
         num_feat = 64
         self.img_range = img_range
@@ -699,10 +829,11 @@ class SwinIR_CA(nn.Module):
         self.upscale = upscale
         self.upsampler = upsampler
         self.window_size = window_size
-
+        self.burst_size = burst_size
         #####################################################################################################
         ################################### 1, shallow feature extraction ###################################
-        self.conv_first = nn.Conv2d(num_in_ch, embed_dim, 3, 1, 1)
+        self.conv_first_0 = nn.Conv2d(in_chans, 3, 3, 1, 1)
+        self.conv_first = nn.Conv2d(3, embed_dim, 3, 1, 1)
 
         #####################################################################################################
         ################################### 2, deep feature extraction ######################################
@@ -770,6 +901,15 @@ class SwinIR_CA(nn.Module):
                                                  nn.Conv2d(embed_dim // 4, embed_dim // 4, 1, 1, 0),
                                                  nn.LeakyReLU(negative_slope=0.2, inplace=True),
                                                  nn.Conv2d(embed_dim // 4, embed_dim, 3, 1, 1))
+        
+        ######################################################################################################
+        ################################ burst features fusion ###############################################
+        conv_burst = [nn.Conv2d(self.burst_size, embed_dim, 3, 1, 1)] 
+        conv_burst += [nn.Conv2d(embed_dim // 2**(i), embed_dim // 2**(i+1), 3, 1, 1) for i in range(3)]
+        conv_burst += [nn.Conv2d(embed_dim // 8, 1, 3, 1, 1)]
+        conv_burst = nn.Sequential(*conv_burst)
+        self.conv_burst = conv_burst
+        self.UNet = nn.Sequential(MSF(embed_dim))
 
         #####################################################################################################
         ################################ 3, high quality image reconstruction ################################
@@ -778,7 +918,11 @@ class SwinIR_CA(nn.Module):
             self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
                                                       nn.LeakyReLU(inplace=True))
             self.upsample = Upsample(upscale, num_feat)
-            self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+            self.conv_last = nn.Conv2d(num_feat, 3, 3, 1, 1)
+
+            # change the output channel on the condiction of pretrained model
+            self.conv_final = nn.Conv2d(3, num_out_ch,3,1,1)
+            self.act_lat = nn.Sigmoid()
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR (to save parameters)
             self.upsample = UpsampleOneStep(upscale, embed_dim, num_out_ch,
@@ -839,39 +983,41 @@ class SwinIR_CA(nn.Module):
         return x
 
     def forward(self, x):
+        # [1,num_burst, 1, h, w]->[num_burst,1,h,w]
+        x = x[0]
+
         H, W = x.shape[2:]
         x = self.check_image_size(x)
 
-        self.mean = self.mean.type_as(x)
-        x = (x - self.mean) * self.img_range
-
         if self.upsampler == 'pixelshuffle':
             # for classical SR
+            x = self.conv_first_0(x)
             x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
-            x = self.conv_before_upsample(x)
-            x = self.conv_last(self.upsample(x))
-        elif self.upsampler == 'pixelshuffledirect':
-            # for lightweight SR
-            x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
-            x = self.upsample(x)
-        elif self.upsampler == 'nearest+conv':
-            # for real-world SR
-            x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
-            x = self.conv_before_upsample(x)
-            x = self.lrelu(self.conv_up1(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
-            x = self.lrelu(self.conv_up2(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
-            x = self.conv_last(self.lrelu(self.conv_hr(x)))
-        else:
-            # for image denoising and JPEG compression artifact reduction
-            x_first = self.conv_first(x)
-            res = self.conv_after_body(self.forward_features(x_first)) + x_first
-            x = x + self.conv_last(res)
 
-        x = x / self.img_range + self.mean
+            # extract feature with skip connection
+            x = self.conv_after_body(self.forward_features(x)) + x  # [5,180,256,256]
 
+            # burst features fusion
+            x = x.permute(1,0,2,3).contiguous()  # [180,5,256,256]
+            x = self.conv_burst(x)  # [180,180,256,256]->[180,1,256,256]
+
+            # u-net multi-scale
+            # x = self.UNet(x)  # cuda out of memory
+            x = x.permute(1,0,2,3)  # [embed_dim, embed_dim, h, w] [1,180,256,256]
+
+            # direct upsample
+            x = self.conv_before_upsample(x)
+            x = self.conv_last(self.upsample(x))  # [1,1,512,512]
+            
+            # change the channel
+            x = self.conv_final(x)
+            # print('*****x***', torch.max(x), torch.min(x))
+            # x = self.act_lat(x) # [0,1]
+            # print('*****x_act***', torch.max(x), torch.min(x))
+            
+        x = x * self.img_range  # -> [0,1]
+        # print('***output***')
+        # x = x * self.img_range
         return x[:, :, :H*self.upscale, :W*self.upscale]
 
     def flops(self):
@@ -903,28 +1049,3 @@ class SwinIR_CA(nn.Module):
                 if name.find('tail') == -1:
                     raise KeyError('unexpected key "{}" in state_dict'
                                    .format(name))
-
-# def make_model(args, parent=False):
-
-#     return SWinIR(img_size=args.patch_size, patch_size=1, in_chans=3,
-#                  embed_dim=96, depths=[6, 6, 6, 6], num_heads=[6, 6, 6, 6],
-#                  window_size=8, mlp_ratio=4., qkv_bias=True, qk_scale=None,
-#                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
-#                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-#                  use_checkpoint=False, upscale=args.scale[0], img_range=1., upsampler='pixelshuffle', resi_connection='1conv',
-#                  **kwargs)
-
-# if __name__ == '__main__':
-#     upscale = 4
-#     window_size = 8
-#     height = (1024 // upscale // window_size + 1) * window_size
-#     width = (720 // upscale // window_size + 1) * window_size
-#     model = SwinIR(upscale=2, img_size=(height, width),
-#                    window_size=window_size, img_range=1., depths=[6, 6, 6, 6],
-#                    embed_dim=60, num_heads=[6, 6, 6, 6], mlp_ratio=2, upsampler='pixelshuffledirect')
-#     print(model)
-#     print(height, width, model.flops() / 1e9)
-
-#     x = torch.randn((1, 3, height, width))
-#     x = model(x)
-#     print(x.shape)
