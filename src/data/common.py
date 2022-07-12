@@ -98,7 +98,7 @@ def augment(*args, hflip=True, rot=True):
             if hflip: img = img[:, ::-1, :]
             if vflip: img = img[::-1, :, :]
             if rot90: img = img.transpose(1, 0, 2)
-        elif len(img.shape)==1:
+        elif len(img.shape)==2:
             if hflip: img = img[:, ::-1]
             if vflip: img = img[::-1, :]
             if rot90: img = img.transpose(1, 0)

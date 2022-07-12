@@ -83,6 +83,7 @@ class Trainer_ema():
                     model_out = sr + sr_ema
                 else:
                     model_out = [sr,sr_ema]
+                    
                 loss, loss_wandb = self.loss(model_out, hr)
                 loss.backward()
 
@@ -119,6 +120,7 @@ class Trainer_ema():
                 sr = self.model(lr, 0)
                 idx = [hr_mask==0]
                 sr[idx] = 0
+
                 loss = self.loss(sr, hr)
                 loss.backward()
                 if self.args.gclip > 0:

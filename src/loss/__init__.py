@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from model import common
 
+import wandb
 
 class Gradient_L1(nn.Module):
     def __init__(self, ksize=3):
@@ -346,6 +347,7 @@ class Loss(nn.modules.loss._Loss):
 
     def forward(self, sr, hr):
         losses = []
+        loss_wandb = {}
         for i, l in enumerate(self.loss):
             if l['function'] is not None:
                 loss = l['function'](sr, hr)  # mask_weighted L1 loss
@@ -356,14 +358,18 @@ class Loss(nn.modules.loss._Loss):
                 effective_loss = l['weight'] * loss
                 losses.append(effective_loss)
                 self.log[-1, i] += effective_loss.item()
+
+                loss_wandb[l['type']] = effective_loss
+
             elif l['type'] == 'DIS':
                 self.log[-1, i] += self.loss[i - 1]['function'].loss
+                loss_wandb['DIS'] = self.loss[i - 1]['function'].loss
 
         loss_sum = sum(losses)
         if len(self.loss) > 1:
             self.log[-1, -1] += loss_sum.item()
-
-        return loss_sum
+    
+        return loss_sum, loss_wandb
 
     def step(self):
         for l in self.get_loss_module():

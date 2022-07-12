@@ -39,7 +39,7 @@ class Discriminator(nn.Module):
 
         patch_size = args.patch_size // (2**((depth + 1) // 2))
         m_classifier = [
-            nn.Linear(out_channels * patch_size**2, 1024),
+            nn.Linear(out_channels * (patch_size**2) * 4, 1024),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
             nn.Linear(1024, 1)
         ]

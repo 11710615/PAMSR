@@ -8,6 +8,7 @@ from option import args
 from trainer import Trainer
 from trainer_ema import Trainer_ema
 from trainer_burst import Trainer_burst
+from trainer_burst_ema import Trainer_burst_ema
 from data.burst import BurstSRDataset
 from torch.utils.data.dataloader import DataLoader
 
@@ -28,15 +29,18 @@ def main():
             _loss = loss.Loss(args, checkpoint) if not args.test_only else None
             if args.use_ema:
                 t = Trainer_ema(args, loader, _model, _loss, checkpoint)
-            elif args.model in ['bipnet', 'swinir_burst']:
+            elif args.template in ['bipnet_x2', 'bipnet_swinir_x2']:
                 # train_dataset = BurstSRDataset(args, split='train')
                 # train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
                 # test_dataset = BurstSRDataset(args, split='val')
                 # test_loader = DataLoader(test_dataset, batch_size=args.batch_size)
                 # t = Trainer_burst(args, train_loader,test_loader, _model, _loss, checkpoint)
                 t = Trainer_burst(args, loader, _model, _loss, checkpoint)
+            elif args.template == 'bipnet_swinir_GradientL1_x2':
+                t = Trainer_burst_ema(args, loader, _model, _loss, checkpoint)
             else:
                 t = Trainer(args, loader, _model, _loss, checkpoint)
+
             while not t.terminate():
                 t.train()
                 t.test()

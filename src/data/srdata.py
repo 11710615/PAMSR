@@ -104,6 +104,7 @@ class SRData(data.Dataset):
 
     def __getitem__(self, idx): # idx: for image, all the hrs have the same mask
         lr, hr, filename = self._load_file(idx)  # hr: 1000x1000
+
         if not self.args.use_mask:
             pair = self.get_patch(lr, hr)
             pair = common.set_channel(*pair, n_channels=self.args.n_colors)
@@ -165,7 +166,9 @@ class SRData(data.Dataset):
                     multi=(len(self.scale) > 1),
                     input_large=self.input_large
                 )
+
                 if not self.args.no_augment: lr, hr = common.augment(lr, hr)
+      
                 return lr, hr
         else:  # test mode
             if self.args.model != 'unet':
