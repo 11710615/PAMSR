@@ -102,10 +102,14 @@ class Trainer_burst_ema():
                     timer_model.release(),
                     timer_data.release()))
 
+
+            base_input = torch.cat([burst[i][0:1] for i in range(burst.shape[0])], axis=0)
+            
+            # print('base_input', base_input.shape)
             wandb.log({'total_loss': loss, 'loss': loss_wandb, 'epoch':epoch,
             'burst_output': wandb.Image(sr),
             'gt': wandb.Image(hr),
-            'base_input': wandb.Image(burst[0][0:1])})
+            'base_input': wandb.Image(base_input)})
 
             timer_data.tic()
                 

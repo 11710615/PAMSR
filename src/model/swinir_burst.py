@@ -1012,7 +1012,7 @@ class SwinIR_burst(nn.Module):
             # change the channel
             x = self.conv_final(x)
             # print('*****x***', torch.max(x), torch.min(x))
-            # x = self.act_lat(x) # [0,1]
+            x = self.act_lat(x) # [0,1]
             # print('*****x_act***', torch.max(x), torch.min(x))
             
         x = x * self.img_range  # -> [0,1]

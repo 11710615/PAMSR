@@ -283,13 +283,13 @@ def set_template(args):
         args.num_features = 180
         args.burst_size = 5
         args.scale = '2'
-        args.loss = '10*Gradient_L1+4*VGG54+0.1*GAN'
+        args.loss = '200*Gradient_L1+0.5*VGG54+0.05*GAN'  # [10,4,0.1]->[100,1,0.1]
         args.output_channels = 1
         args.chop = True
         args.save = 'bipnet_swinir_x2_burst-' + str(args.burst_size)+ '_' + args.loss
         args.data_train = 'burst'
         args.data_test = 'burst'
-        args.batch_size = 2
+        args.batch_size = (len(args.gpu_ids) + 1) // 2
         args.rgb_range = 1
         args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
         # args.pre_train = '../experiment/bipnet_swinir_GradientL1_x2_burst-'+ str(args.burst_size) + '_' + args.loss+'/model/model_best.pt'
