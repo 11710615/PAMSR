@@ -221,8 +221,13 @@ class RL1(nn.Module):
     def __init__(self):
         super(RL1, self).__init__()
         self.l1 = nn.L1Loss()
-    def forward(self,m,hr): # sr: tuple
-        sr = m[0]
+    def forward(self,sr,hr): # sr: tuple
+        if isinstance(sr, list):
+            sr = sr[0]
+        elif isinstance(sr, tuple):
+            sr = sr[0]
+        else:
+            sr = sr
         out = self.l1(sr,hr)
         return out
 
@@ -351,10 +356,6 @@ class Loss(nn.modules.loss._Loss):
         for i, l in enumerate(self.loss):
             if l['function'] is not None:
                 loss = l['function'](sr, hr)  # mask_weighted L1 loss
-                # print('loss', loss)
-                # print('sr.shape:',sr.shape)
-                # print('hr.shape:',hr[0,0,:,:])
-                # y1
                 effective_loss = l['weight'] * loss
                 losses.append(effective_loss)
                 self.log[-1, i] += effective_loss.item()

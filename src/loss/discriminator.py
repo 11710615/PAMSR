@@ -12,7 +12,7 @@ class Discriminator(nn.Module):
         in_channels = args.output_channels
         out_channels = 64
         depth = 7
-
+    
         def _block(_in_channels, _out_channels, stride=1):
             return nn.Sequential(
                 nn.Conv2d(
@@ -39,7 +39,7 @@ class Discriminator(nn.Module):
 
         patch_size = args.patch_size // (2**((depth + 1) // 2))
         m_classifier = [
-            nn.Linear(out_channels * (patch_size**2) * 4, 1024),
+            nn.Linear(out_channels * (patch_size**2) * (args.scale[0]**2), 1024),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
             nn.Linear(1024, 1)
         ]

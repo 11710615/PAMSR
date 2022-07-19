@@ -7,8 +7,20 @@ import pickle as pkl
 import torch.nn.functional as F
 import random
 
+
+def down_sample(img, scale):
+    """down sample with scale"""
+    h,w = img.shape[-2:]
+    img_down = img[...,range(0, h, scale), :]
+    img_down = img_down[..., :, range(0, w, scale)]
+
+    return img_down
+
 class BurstSRDataset(torch.utils.data.Dataset):
-    """ Real-world burst super-resolution dataset. """
+    """ used for burst dataset
+        hr: [b, 1, h/2, w]
+
+        lr is generated from hr with mask"""
     def __init__(self, args, name='BurstSRDataset', center_crop=False, split='train'):
         """
         args:
@@ -20,7 +32,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
             split: Can be 'train' or 'val'
         """
         self.burst_size = args.burst_size
-        assert self.burst_size <= 50, 'burst_sz must be less than or equal to 14'
+        assert self.burst_size <= 25, 'burst_sz must be less than or equal to 14'
         assert split in ['train', 'val']
         root = args.data_train[0]  # list
         root = args.dir_data + '/' + root + '/' + split
@@ -45,35 +57,38 @@ class BurstSRDataset(torch.utils.data.Dataset):
                 self.repeat = max(n_patch // n_image, 1)
 
     def _get_burst_list(self):
-        burst_list = sorted(os.listdir('{}/x1'.format(self.root)))  # 'busrst_data/train'
+        burst_list = sorted(os.listdir(self.root))  # 'busrst_data/train'
         #print(burst_list)
         return burst_list  # 'brain_1','brain_3',...,'ear_8'
 
     def get_burst_info(self, burst_id):
-        burst_info = {'burst_size': 50, 'burst_name': self.burst_list[burst_id]}
+        burst_info = {'burst_size': 25, 'burst_name': self.burst_list[burst_id]}
         return burst_info
 
-    def _get_raw_image(self, burst_id, im_id):  # directly read image and to tensor
-        # im_id: 0-49, burst_id:0-30
-        idx_temp = self.burst_list[burst_id].find('_') + 1
-        raw_image = cv2.imread('{}/x{}/{}/{}_{}x{}.png'.format(self.root, str(self.args.scale[0]), self.burst_list[burst_id], self.burst_list[burst_id][idx_temp:], im_id+1, self.args.scale[0]),0)
-        if raw_image is None:
-            print('path', '{}/x{}/{}/{}_{}x{}.png'.format(self.root, str(self.args.scale[0]), self.burst_list[burst_id], self.burst_list[burst_id][idx_temp:], im_id+1, self.args.scale[0]))
-        raw_image = raw_image / raw_image.max()
-        raw_image = torch.from_numpy(raw_image)
+    def _get_lr_image(self, burst_id, im_id):  # directly read image and to tensor
+        # im_id: 0-24, burst_id:0-56
+        scale = self.args.scale[0]
+        if not os.path.exists(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png'):
+            hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
+        else:
+            hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png', 0)
+        if hr_image is None:
+            # hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
+            print('path', self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id) + '_X1_X1.png')
         
-        # raw_image = SamsungRAWImage.load('{}/{}/samsung_{:02d}'.format(self.root, self.burst_list[burst_id], im_id))
-        return raw_image
+        lr_image = down_sample(hr_image, scale=scale)
+        lr_image = (lr_image - lr_image.min()) / lr_image.max()
+        lr_image = torch.from_numpy(lr_image)
+        return lr_image
 
     def _get_gt_image(self, burst_id):
-        idx_temp = self.burst_list[burst_id].find('_') + 1
-        gt_img = cv2.imread('{}/x1/{}/{}_1.png'.format(self.root, self.burst_list[burst_id], self.burst_list[burst_id][idx_temp:]),0)
-        gt_img = gt_img / gt_img.max()  # norm
+        gt_img = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/1_X1_X1.png',0)
+        gt_img = (gt_img- gt_img.min()) / gt_img.max()  # norm
         gt_img = torch.from_numpy(gt_img)
         return gt_img
 
     def get_burst(self, burst_id, im_ids, info=None):
-        frames = [self._get_raw_image(burst_id, i) for i in im_ids]
+        frames = [self._get_lr_image(burst_id, i) for i in im_ids]
 
         gt = self._get_gt_image(burst_id)
         if info is None:
@@ -82,18 +97,19 @@ class BurstSRDataset(torch.utils.data.Dataset):
         return frames, gt, info
 
     def _sample_images(self):  # keep ids=0 as the base frame
-        burst_size_max = 50
-        ids = random.sample(range(1, burst_size_max), k=self.burst_size - 1)
-        ids = [0, ] + ids
+        # burst_size_max = self.args.burst_size_max
+        ids = list(range(self.burst_size))  # select burst img regularly     
+        # ids = random.sample(range(1, burst_size_max), k=self.burst_size - 1)
+        # ids = [0, ] + ids
         return ids
     
-    def _get_crop(self, frames, gt, patch_size=64, scale=4, center_crop=False):
-
+    def _get_crop(self, frames, gt, patch_size=64, scale=2, center_crop=False):
         ih, iw = frames[0].shape[:2]  # 250,250
         p = scale
-        tp = p * patch_size  # 64*2=128
+
+        tp = patch_size * p  # 64*2=128
         ip = tp // scale  # 64
-        
+
         if center_crop:
             ix = (iw - patch_size) // 2
             iy = (ih - patch_size) // 2
@@ -102,11 +118,11 @@ class BurstSRDataset(torch.utils.data.Dataset):
             iy = random.randrange(0, ih - ip + 1)
         
         tx, ty = scale * ix, scale * iy
-        
         ret = [
             [img[iy:iy + ip, ix:ix + ip] for img in frames],
             gt[ty:ty + tp, tx:tx + tp]
         ]
+        # print('tp**',)
         return ret  # ret[0]: burst list, ret[1]: gt
     
     def _augment(self, frames, gt, hflip=True, rot=True): 
@@ -141,7 +157,6 @@ class BurstSRDataset(torch.utils.data.Dataset):
 
         # Read the burst images along with HR ground truth
         frames, gt, meta_info = self.get_burst(index, im_ids)
-
         # Extract crop if needed
         if self.split == 'train':
             burst_list, gt = self._get_crop(frames, gt, patch_size=self.args.patch_size, scale=self.args.scale[0])
@@ -153,7 +168,8 @@ class BurstSRDataset(torch.utils.data.Dataset):
         # unsqueence
         burst_list = [img.unsqueeze(0) for img in burst_list]
         gt = gt.unsqueeze(0).float()
-        burst = torch.stack(burst_list, dim=0).float()
-
+        burst = torch.stack(burst_list, dim=0).float()  # [5,1,h,w]，封装后，添加batch
+        if self.burst_size == 1:
+            burst = burst.squeeze(0)  # [1,1,h,w]->[1,h,w]
         return burst, gt, meta_info  # dict
 

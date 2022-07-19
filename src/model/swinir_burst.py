@@ -905,12 +905,15 @@ class SwinIR_burst(nn.Module):
         ######################################################################################################
         ################################ burst features fusion ###############################################
         conv_burst = [nn.Conv2d(self.burst_size, embed_dim, 3, 1, 1)] 
-        conv_burst += [nn.Conv2d(embed_dim // 2**(i), embed_dim // 2**(i+1), 3, 1, 1) for i in range(3)]
-        conv_burst += [nn.Conv2d(embed_dim // 8, 1, 3, 1, 1)]
         conv_burst = nn.Sequential(*conv_burst)
         self.conv_burst = conv_burst
+
         self.UNet = nn.Sequential(MSF(embed_dim))
 
+        conv_burst_1 = [nn.Conv2d(embed_dim // 2**(i), embed_dim // 2**(i+1), 3, 1, 1) for i in range(3)]
+        conv_burst_1 += [nn.Conv2d(embed_dim // 8, 1, 3, 1, 1)]
+        self.con_burst_1 = nn.Sequential(*conv_burst_1)
+        
         #####################################################################################################
         ################################ 3, high quality image reconstruction ################################
         if self.upsampler == 'pixelshuffle':
@@ -1000,9 +1003,10 @@ class SwinIR_burst(nn.Module):
             # burst features fusion
             x = x.permute(1,0,2,3).contiguous()  # [180,5,256,256]
             x = self.conv_burst(x)  # [180,180,256,256]->[180,1,256,256]
-
+            
             # u-net multi-scale
             # x = self.UNet(x)  # cuda out of memory
+            x = self.con_burst_1(x)
             x = x.permute(1,0,2,3)  # [embed_dim, embed_dim, h, w] [1,180,256,256]
 
             # direct upsample

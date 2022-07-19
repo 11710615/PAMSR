@@ -38,7 +38,7 @@ parser.add_argument('--data_train', type=str, default='BVMedV4',
                     help='train dataset name')
 parser.add_argument('--data_test', type=str, default='BVMedTestV4',
                     help='test dataset name')
-parser.add_argument('--data_range', type=str, default='1-118/1-42',
+parser.add_argument('--data_range', type=str, default='1-88/1-32',
                     help='train/test data range')
 parser.add_argument('--ext', type=str, default='sep',
                     help='dataset file extension')
@@ -56,6 +56,12 @@ parser.add_argument('--chop', action='store_true',
                     help='enable memory-efficient forward')
 parser.add_argument('--no_augment', action='store_true',
                     help='do not use data augmentation')
+                    
+parser.add_argument('--test_patch_size', type=int, default=500,
+                    help='the patch_size in test phase in case of out of memory')
+parser.add_argument('--burst_size_max',type=int, default=25,
+                    help='max size of burst')
+
 
 # Model specifications
 parser.add_argument('--model', default='EDSR',

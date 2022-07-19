@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------------
 
 import math
-from regex import R
+# from regex import R
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -675,6 +675,7 @@ class SwinIR(nn.Module):
 
         #####################################################################################################
         ################################### 1, shallow feature extraction ###################################
+        self.conv_first_0 = nn.Conv2d(1, 3, 3, 1, 1)
         self.conv_first = nn.Conv2d(num_in_ch, embed_dim, 3, 1, 1)
 
         #####################################################################################################
@@ -826,6 +827,7 @@ class SwinIR(nn.Module):
         # r
         if self.upsampler == 'pixelshuffle':
             # for classical SR
+            x = self.conv_first_0(x)
             x = self.conv_first(x)
             x = self.conv_after_body(self.forward_features(x)) + x
             x = self.conv_before_upsample(x)

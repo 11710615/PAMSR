@@ -1,10 +1,14 @@
+from heapq import merge
 import os
 from importlib import import_module
+
+from requests import patch
 
 import torch
 import torch.nn as nn
 import torch.nn.parallel as P
 import torch.utils.model_zoo
+import numpy as np
 
 class Model(nn.Module):
     def __init__(self, args, ckp):
@@ -107,12 +111,68 @@ class Model(nn.Module):
         if load_from:
             self.model.load_state_dict(load_from, strict=False)
 
+    # def split_patch(self,img, shave, n_patch=4):
+    #     h, w = img[0].size()[-2:]
+    #     n_p = int(np.sqrt(n_patch))
+    #     patch_h = h // n_p
+    #     patch_w = w // n_p
+    #     print('patch',patch_h,h,w)
+    #     patch_list = []
+    #     for i in range(n_p):
+    #         if i == n_p-1:
+    #             h0 = slice(i*patch_h-2*shave, (i+1)*patch_h)
+    #         elif i==0:
+    #             h0 = slice(i*patch_h,(i+1)*patch_h+2*shave)
+    #         else:
+    #             h0 = slice(i*patch_h-shave, (i+1)*patch_h+shave)
+    #         for j in range(n_p):
+    #             if j == n_p-1:
+    #                 w0 = slice(j*patch_w-2*shave, (j+1)*patch_w)
+    #             elif j == 0:
+    #                 w0 = slice(j*patch_w, (j+1)*patch_w+2*shave)
+    #             else:
+    #                 w0 = slice(j*patch_w-shave, (j+1)*patch_w+shave)
+    #             patch_list.append(img[...,h0, w0])
+            
+    #     return torch.cat(patch_list)
+
+    # def merge_patch(self, patch_list, shave):
+    #     patch_list = patch_list[0]
+    #     b, c, patch_h, patch_w = patch_list[0].size()
+    #     n_p = int(np.sqrt(len(patch_list)))
+    #     out_h = int((patch_h - 4*shave)*n_p)
+    #     out_w = int((patch_w - 4*shave)*n_p)
+    #     merge_out = torch.zeros([b, c, out_h, out_w])
+    #     print('*****merge', merge_out.shape, out_h,patch_h,n_p)
+    #     patch_idx = 0
+    #     for i in range(n_p):
+    #         patch_idx = i * n_p
+    #         if i == n_p-1:
+    #             h0 = slice(-(patch_h-4*shave), None)
+    #         elif i == 0:
+    #             h0 = slice(0, (patch_h-4*shave))
+    #         else:
+    #             h0 = slice(2*shave, -2*shave)
+    #         h_merge = slice(i*(patch_h-4*shave),(i+1)*(patch_h-4*shave))
+    #         for j in range(n_p):
+    #             patch_idx_temp = patch_idx + j
+    #             if j == n_p-1:
+    #                 w0 = slice(-(patch_w-4*shave), None)
+    #             elif j == 0:
+    #                 w0 = slice(0, patch_w-4*shave)
+    #             else:
+    #                 w0 = slice(2*shave, -2*shave)
+    #             w_merge = slice(j*(patch_w-4*shave), (j+1)*(patch_w-4*shave))
+    #             merge_out[..., h_merge, w_merge] = patch_list[patch_idx_temp][...,h0, w0]
+    #     return merge_out
+
     def forward_chop(self, *args, shave=10, min_size=160000):
         scale = 1 if self.input_large else self.scale[self.idx_scale]
         # n_GPUs = min(self.n_GPUs, 4)
         n_GPUs = min(len(self.gpu_ids), 4)
         # height, width
         h, w = args[0].size()[-2:]
+        # shave = int(h % 4)
         top = slice(0, h//2 + shave)
         bottom = slice(h - h//2 - shave, h)
         left = slice(0, w//2 + shave)
@@ -123,7 +183,8 @@ class Model(nn.Module):
             a[..., bottom, left],
             a[..., bottom, right]
         ]) for a in args]
-
+        # n_patch = 4
+        # x_chops = [self.split_patch(a, shave, n_patch) for a in args]
 
         y_chops = []
         if h * w < 4 * min_size:
@@ -134,12 +195,12 @@ class Model(nn.Module):
                 if isinstance(y,tuple):
                     y = y[0]  # output tuple for spsr
                 if not isinstance(y, list): y = [y]
-
                 if not y_chops:
                     y_chops = [[c for c in _y.chunk(n_GPUs, dim=0)] for _y in y]
                 else:
                     for y_chop, _y in zip(y_chops, y):
                         y_chop.extend(_y.chunk(n_GPUs, dim=0))
+
         else:
             for p in zip(*x_chops):
                 y = self.forward_chop(*p, shave=shave, min_size=min_size)
@@ -150,6 +211,9 @@ class Model(nn.Module):
                     y_chops = [[_y] for _y in y]
                 else:
                     for y_chop, _y in zip(y_chops, y): y_chop.append(_y)
+
+        
+        # y = self.merge_patch(y_chops, shave=shave)
 
         h *= scale
         w *= scale
@@ -163,13 +227,16 @@ class Model(nn.Module):
         # batch size, number of color channels
         b, c = y_chops[0][0].size()[:-2]
         y = [y_chop[0].new(b, c, h, w) for y_chop in y_chops]
+        # print('y_chop', len(y_chops[0]), y[0].shape)
+        # k
         for y_chop, _y in zip(y_chops, y):
             _y[..., top, left] = y_chop[0][..., top, left]
             _y[..., top, right] = y_chop[1][..., top, right_r]
             _y[..., bottom, left] = y_chop[2][..., bottom_r, left]
             _y[..., bottom, right] = y_chop[3][..., bottom_r, right_r]
 
-        if len(y) == 1: y = y[0]
+        if isinstance(y,list):
+             y = y[0]
 
         return y
 

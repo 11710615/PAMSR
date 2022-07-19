@@ -170,6 +170,7 @@ def quantize(img, rgb_range):
     return img.mul(pixel_range).clamp(0, 255).round().div(pixel_range)
 
 def calc_psnr(sr,hr,scale,rgb_range,dataset=None):
+
     if hr.nelement() == 1: return 0
     # k
     # if dataset and dataset.dataset.benchmark:
@@ -179,7 +180,7 @@ def calc_psnr(sr,hr,scale,rgb_range,dataset=None):
         shave = scale + 6
     hr = hr.cpu().numpy()
     sr = sr.cpu().numpy()
-    
+    # print('output*********',hr.shape, sr.shape)
     psnr_value = psnr(hr[..., shave:-shave, shave:-shave],sr[..., shave:-shave, shave:-shave],data_range=rgb_range)
 
     return psnr_value

@@ -8,7 +8,7 @@ from torch.utils.data import ConcatDataset
 class MyConcatDataset(ConcatDataset):
     def __init__(self, datasets):
         super(MyConcatDataset, self).__init__(datasets)
-        if not datasets[0].name in ['BurstSRDataset']:
+        if not datasets[0].name in ['BurstSRDataset', 'BurstSRDataset_new']:
             self.train = datasets[0].train
 
     def set_scale(self, idx_scale):
@@ -22,6 +22,10 @@ class Data:
             datasets = []
             for d in args.data_train:  # 'BVMedV4'
                 if d in ['burst']:
+                    module_name = d
+                    m = import_module('data.'+module_name.lower())
+                    datasets.append(getattr(m, 'BurstSRDataset')(args, split='train'))
+                elif d in ['burst_v1']:
                     module_name = d
                     m = import_module('data.'+module_name.lower())
                     datasets.append(getattr(m, 'BurstSRDataset')(args, split='train'))
@@ -47,11 +51,16 @@ class Data:
                 module_name = d
                 m = import_module('data.' + module_name.lower())
                 testset = getattr(m, 'BurstSRDataset')(args, split='val')
+            elif d in ['burst_v1']:
+                module_name = d
+                m = import_module('data.' + module_name.lower())
+                testset = getattr(m, 'BurstSRDataset')(args, split='val')
+                
             else:
                 module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
                 m = import_module('data.' + module_name.lower())
                 testset = getattr(m, module_name)(args, train=False, name=d)
-
+            print('Loading {} done'.format(module_name))
             self.loader_test.append(
                 dataloader.DataLoader(
                     testset,

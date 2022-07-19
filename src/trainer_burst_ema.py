@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 import torch.nn.utils as utils
 from tqdm import tqdm
-import cv2
 from model.common import Get_gradient, ema
 import copy
 import wandb
@@ -102,9 +101,10 @@ class Trainer_burst_ema():
                     timer_model.release(),
                     timer_data.release()))
 
-
-            base_input = torch.cat([burst[i][0:1] for i in range(burst.shape[0])], axis=0)
-            
+            if len(burst.shape) == 5:
+                base_input = torch.cat([burst[i][0:1] for i in range(burst.shape[0])], axis=0)
+            else:
+                base_input = burst
             # print('base_input', base_input.shape)
             wandb.log({'total_loss': loss, 'loss': loss_wandb, 'epoch':epoch,
             'burst_output': wandb.Image(sr),
@@ -135,13 +135,12 @@ class Trainer_burst_ema():
 
                 # d.dataset.set_scale(idx_scale)
 
-                for burst, hr, meta_info in tqdm(d, ncols=80):
+                for burst, hr, meta_info in tqdm(d, ncols=80): # hr: [1,1,500,250]
                     filename = meta_info['burst_name']
                     if self.output_channels < hr.shape[1]:
                         hr = hr[:,0:1,:]
                     # if hr.shape[1]==3:
                     #     hr = hr[:,0:1,:]
-                    # print('*****',burst.shape, hr.shape)
                     burst, hr = self.prepare(burst, hr)
 
                     with torch.no_grad():
@@ -154,7 +153,10 @@ class Trainer_burst_ema():
                         sr, hr, scale, self.args.rgb_range, dataset=d
                     )
                     if self.args.save_gt:
-                        save_list.extend([burst[0][0:1], hr])
+                        if len(burst.shape) == 5:
+                            save_list.extend([burst[0][0:1], hr])
+                        else:
+                            save_list.extend([burst, hr])
 
                     if self.args.save_results:
                         self.ckp.save_results(d, filename[0], save_list, scale)
