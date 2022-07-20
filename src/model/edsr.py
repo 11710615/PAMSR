@@ -1,6 +1,6 @@
 import pstats
-# from model import common
-import common
+from model import common
+# import common
 import torch.nn as nn
 
 url = {
@@ -30,9 +30,9 @@ class EDSR(nn.Module):
         else:
             self.url = None
         
-        self.input_channel = args.n_colors
-        self.sub_mean = common.MeanShift(args.rgb_range)
-        self.add_mean = common.MeanShift(args.rgb_range, sign=1)
+        # self.input_channel = args.n_colors
+        # self.sub_mean = common.MeanShift(args.rgb_range)
+        # self.add_mean = common.MeanShift(args.rgb_range, sign=1)
 
         # define head module
         m_head = [conv(args.n_colors, n_feats, kernel_size)]
@@ -50,29 +50,30 @@ class EDSR(nn.Module):
             common.Upsampler(conv, scale, n_feats, act=False),
             conv(n_feats, args.n_colors, kernel_size)
         ]
-
+        self.head_0 = nn.Conv2d(1,3,3,1,1)
         self.head = nn.Sequential(*m_head)
         self.body = nn.Sequential(*m_body)
         self.tail = nn.Sequential(*m_tail)
+        self.tail_1 = nn.Conv2d(args.n_colors, 1, 3, 1, 1)
 
     def forward(self, x):
 # dou not need sub_mean for gray image
-        if self.input_channel==1:
-            pass
-        else:
-            x = self.sub_mean(x)
-
+        # if self.input_channel==1:
+        #     pass
+        # else:
+        #     x = self.sub_mean(x)
+        x = self.head_0(x)
         x = self.head(x)
 
         res = self.body(x)
         res += x
 
         x = self.tail(res)
-
-        if self.input_channel==1:
-            pass
-        else:
-            x = self.add_mean(x)
+        x = self.tail_1(x)
+        # if self.input_channel==1:
+        #     pass
+        # else:
+        #     x = self.add_mean(x)
 
         return x 
 

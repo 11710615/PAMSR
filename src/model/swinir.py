@@ -17,7 +17,7 @@ def make_model(args, parent=False):
                  window_size=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, upscale=args.scale[0], img_range=255., upsampler='pixelshuffle', resi_connection='1conv')
+                 use_checkpoint=False, upscale=args.scale[0], img_range=1., upsampler='pixelshuffle', resi_connection='1conv')
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -855,8 +855,9 @@ class SwinIR(nn.Module):
             x = x + self.conv_last(res)
 
 
-        x = x * self.img_range  # [0,255]
+        x = x * self.img_range  # [0,1]
         # x = x * self.img_range
+
         return x[:, :, :H*self.upscale, :W*self.upscale]
 
     def flops(self):

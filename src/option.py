@@ -1,4 +1,6 @@
 import argparse
+
+from yaml import parse
 import template
 import torch
 
@@ -34,9 +36,9 @@ parser.add_argument('--use_ema', action='store_true',
 
 parser.add_argument('--dir_demo', type=str, default='../test',
                     help='demo image directory')
-parser.add_argument('--data_train', type=str, default='BVMedV4',
+parser.add_argument('--data_train', type=str, default='burst_v1',
                     help='train dataset name')
-parser.add_argument('--data_test', type=str, default='BVMedTestV4',
+parser.add_argument('--data_test', type=str, default='burst_v1',
                     help='test dataset name')
 parser.add_argument('--data_range', type=str, default='1-88/1-32',
                     help='train/test data range')
@@ -56,13 +58,15 @@ parser.add_argument('--chop', action='store_true',
                     help='enable memory-efficient forward')
 parser.add_argument('--no_augment', action='store_true',
                     help='do not use data augmentation')
-                    
+
 parser.add_argument('--test_patch_size', type=int, default=500,
                     help='the patch_size in test phase in case of out of memory')
 parser.add_argument('--burst_size_max',type=int, default=25,
                     help='max size of burst')
-
-
+parser.add_argument('--burst_size',type=int, default=1,
+                    help='size of burst')
+parser.add_argument('--downsample_gt', action='store_true',
+                    help='whether downsample gt to eliminate malposition')
 # Model specifications
 parser.add_argument('--model', default='EDSR',
                     help='model name')
@@ -106,7 +110,7 @@ parser.add_argument('--reset', action='store_true',
                     help='reset the training')
 parser.add_argument('--test_every', type=int, default=1000,
                     help='do test per every N batches')
-parser.add_argument('--epochs', type=int, default=300,
+parser.add_argument('--epochs', type=int, default=200,
                     help='number of epochs to train')
 parser.add_argument('--batch_size', type=int, default=8,
                     help='input batch size for training')

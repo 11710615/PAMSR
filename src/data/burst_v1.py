@@ -43,18 +43,28 @@ class BurstSRDataset(torch.utils.data.Dataset):
         self.center_crop = center_crop
         self.name = name
         self.root = root
+        self.downsample_gt = args.downsample_gt
 
         self.substract_black_level = True
         self.white_balance = False
 
         self.burst_list = self._get_burst_list()
         if self.split == 'train':
-            n_patch = args.batch_size * args.test_every
+            if self.downsample_gt:  # consider both odd and even rows
+                n_patch = args.batch_size * args.test_every * 2
+            else:
+                n_patch = args.batch_size * args.test_every
             n_image = len(self.burst_list)
             if n_image == 0:
                 self.repeat = 0
             else:
                 self.repeat = max(n_patch // n_image, 1)
+
+        if self.split == 'train':
+            self.start_raw = np.random.randint(2)  # 0/1
+        else:
+            self.start_raw = 0
+            print('***start_raw****', self.start_raw)
 
     def _get_burst_list(self):
         burst_list = sorted(os.listdir(self.root))  # 'busrst_data/train'
@@ -66,23 +76,35 @@ class BurstSRDataset(torch.utils.data.Dataset):
         return burst_info
 
     def _get_lr_image(self, burst_id, im_id):  # directly read image and to tensor
+        ################## get burst_lr ##################
         # im_id: 0-24, burst_id:0-56
         scale = self.args.scale[0]
         if not os.path.exists(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png'):
             hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
         else:
             hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png', 0)
+        # padding [1000,1000] -> [1024, 1024]
+        hr_image = cv2.copyMakeBorder(hr_image, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
+        
         if hr_image is None:
             # hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
             print('path', self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id) + '_X1_X1.png')
         
+        if self.downsample_gt:
+            h,_ = hr_image.shape[-2:]
+            hr_image = hr_image[...,range(self.start_raw,h,2),:]
         lr_image = down_sample(hr_image, scale=scale)
         lr_image = (lr_image - lr_image.min()) / lr_image.max()
         lr_image = torch.from_numpy(lr_image)
+
         return lr_image
 
     def _get_gt_image(self, burst_id):
         gt_img = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/1_X1_X1.png',0)
+        gt_img = cv2.copyMakeBorder(gt_img, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
+        if self.downsample_gt:
+            h,_ = gt_img.shape[-2:]
+            gt_img = gt_img[...,range(self.start_raw,h,2),:]
         gt_img = (gt_img- gt_img.min()) / gt_img.max()  # norm
         gt_img = torch.from_numpy(gt_img)
         return gt_img
@@ -103,24 +125,24 @@ class BurstSRDataset(torch.utils.data.Dataset):
         # ids = [0, ] + ids
         return ids
     
-    def _get_crop(self, frames, gt, patch_size=64, scale=2, center_crop=False):
+    def _get_crop(self, frames, gt, patch_size=(64,64), scale=2, center_crop=False):
         ih, iw = frames[0].shape[:2]  # 250,250
         p = scale
-
-        tp = patch_size * p  # 64*2=128
-        ip = tp // scale  # 64
+        
+        tp = [num * scale for num in patch_size]
+        ip = [num // scale for num in tp]  # 64
 
         if center_crop:
-            ix = (iw - patch_size) // 2
-            iy = (ih - patch_size) // 2
+            ix = (iw - patch_size[1]) // 2
+            iy = (ih - patch_size[0]) // 2
         else:
-            ix = random.randrange(0, iw - ip + 1)
-            iy = random.randrange(0, ih - ip + 1)
+            ix = random.randrange(0, iw - ip[1] + 1)
+            iy = random.randrange(0, ih - ip[0] + 1)
         
         tx, ty = scale * ix, scale * iy
         ret = [
-            [img[iy:iy + ip, ix:ix + ip] for img in frames],
-            gt[ty:ty + tp, tx:tx + tp]
+            [img[iy:iy + ip[0], ix:ix + ip[1]] for img in frames],
+            gt[ty:ty + tp[0], tx:tx + tp[1]]
         ]
         # print('tp**',)
         return ret  # ret[0]: burst list, ret[1]: gt
