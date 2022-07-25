@@ -146,6 +146,7 @@ class Trainer_burst_ema():
                     with torch.no_grad():
                         sr = self.model(burst, idx_scale)
 
+                    sr, hr = self.center_crop(sr, hr)
                     sr = utility.quantize(sr, self.args.rgb_range)
                     save_list = [sr]
                     self.ckp.log[-1, idx_data, idx_scale] += utility.calc_psnr(
@@ -204,3 +205,15 @@ class Trainer_burst_ema():
             epoch = self.optimizer.get_last_epoch() + 1
             return epoch >= self.args.epochs
 
+    def center_crop(self, sr, hr):
+        assert(sr.shape==hr.shape)
+        h, w = sr.shape[-2:]
+        h_crop = int(h/100)*100
+        w_crop = int(w/100)*100
+
+        ih = (h - h_crop) // 2
+        iw = (w - w_crop) // 2
+
+        sr_crop = sr[...,ih:ih+h_crop, iw:iw+w_crop]
+        hr_crop = hr[...,ih:ih+h_crop, iw:iw+w_crop]
+        return sr_crop, hr_crop  
