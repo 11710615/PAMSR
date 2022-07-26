@@ -18,6 +18,7 @@ class Trainer_burst_ema():
     def __init__(self, args, loader, my_model, my_loss, ckp):
         self.args = args
         self.scale = args.scale
+        self.downsample_gt = args.downsample_gt
 
         self.ckp = ckp
         self.loader_train = loader.loader_train
@@ -39,6 +40,20 @@ class Trainer_burst_ema():
 
         self.error_last = 1e8
 
+    def forward_downsample_gt(self, burst, hr, model, idx_scale=0):
+        h, _ = burst.shape[-2:]
+        burst_odd = burst[..., range(0, h, 2),:]    
+        burst_even = burst[..., range(1, h, 2),:]
+        # burst_odd, burst_even = self.prepare(burst_odd, burst_even, hr)
+        sr_burst_odd = model(burst_odd, idx_scale)
+        sr_burst_even = model(burst_even, idx_scale)
+        # combine
+        h_hr, _ = hr.shape[-2:]
+        out = torch.zeros_like(hr)
+        out[..., range(0, h_hr, 2), :] = sr_burst_odd
+        out[..., range(1, h_hr, 2), :] = sr_burst_even
+        return out
+
     def train(self):
 
         wandb.init(project='burst_sr_ema', name=self.args.save, entity='p3kkk', config=self.args)
@@ -59,7 +74,7 @@ class Trainer_burst_ema():
 
         for batch, data in enumerate(self.loader_train):
 
-            burst, hr, _ = data  # burst:[1,15,1,64,64]; hr: [1,1,256,256]
+            burst, hr, meta_info, patch_cord = data  # burst:[1,15,1,64,64]; hr: [1,1,256,256]
             if self.output_channels < hr.shape[1]:
                 hr = hr[:,0:1,:]
             # if hr.shape[1]==3:
@@ -71,16 +86,19 @@ class Trainer_burst_ema():
             timer_model.tic()
 
             self.optimizer.zero_grad()
-
-            sr = self.model(burst, 0)
-
-            self.model_ema = ema(self.model, self.model_ema, decay=0.999)
-            sr_ema = self.model_ema(burst,0)
+            if self.downsample_gt:
+                sr = self.forward_downsample_gt(burst, hr, self.model)
+                self.model_ema = ema(self.model, self.model_ema, decay=0.999)
+                sr_ema = self.forward_downsample_gt(burst, hr, self.model_ema)
+            else:
+                sr = self.model(burst, 0)
+                self.model_ema = ema(self.model, self.model_ema, decay=0.999)
+                sr_ema = self.model_ema(burst,0)
 
             if isinstance(sr, tuple):
                 model_out = sr + sr_ema
             else:
-                model_out = [sr,sr_ema]
+                model_out = [sr, sr_ema]
 
             loss, loss_wandb = self.loss(model_out, hr)
             loss.backward()
@@ -135,7 +153,7 @@ class Trainer_burst_ema():
 
                 # d.dataset.set_scale(idx_scale)
 
-                for burst, hr, meta_info in tqdm(d, ncols=80): # hr: [1,1,500,250]
+                for burst, hr, meta_info, patch_cord in tqdm(d, ncols=80): # hr: [1,1,500,250]
                     filename = meta_info['burst_name']
                     if self.output_channels < hr.shape[1]:
                         hr = hr[:,0:1,:]
@@ -144,7 +162,10 @@ class Trainer_burst_ema():
                     burst, hr = self.prepare(burst, hr)
 
                     with torch.no_grad():
-                        sr = self.model(burst, idx_scale)
+                        if self.downsample_gt:
+                            sr = self.forward_downsample_gt(burst, hr, self.model, idx_scale)
+                        else:
+                            sr = self.model(burst, idx_scale)
 
                     sr, hr = self.center_crop(sr, hr)
                     sr = utility.quantize(sr, self.args.rgb_range)
