@@ -25,10 +25,10 @@ def set_template(args):
         else:
             args.test_patch_size = (256 // down_scale, 256)
         # args.loss = '200*Gradient_L1+0.5*VGG54'  # 10L1? 40:bury
-        args.loss = '1*RL1'
+        # args.loss = '1*RL1'
         args.save = str(args.downsample_gt)+'_'+'polar_swinir_L1_nopretrain_downgt_x2_burst-' +str(args.burst_size)+ '_' + args.loss
         # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
-        # args.pre_train = '../experiment/'+str(args.downsample_gt)+'_'+'polar_swinir_L1_x2_burst-' + str(args.burst_size) + '_' + args.loss + '/model/model_best.pt'
+        # args.pre_train = '../experiment/'+str(args.downsample_gt)+'_'+'polar_swinir_L1_nopretrain_downgt_x2_burst-' + str(args.burst_size) + '_' + args.loss + '/model/model_best.pt'
         args.no_augment = True
 
     if args.template.find('EDSR_paper_nopretrain_downgt_x2') >= 0:

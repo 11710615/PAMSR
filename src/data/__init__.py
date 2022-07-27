@@ -54,7 +54,10 @@ class Data:
             elif d in ['burst_v1']:
                 module_name = d
                 m = import_module('data.' + module_name.lower())
-                testset = getattr(m, 'BurstSRDataset')(args, split='val')
+                if args.downsample_gt:
+                    testset = getattr(m, 'BurstSRDataset')(args, split='val_divided')
+                else:
+                    testset = getattr(m, 'BurstSRDataset')(args, split='val')
                 
             else:
                 module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'

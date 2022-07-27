@@ -317,7 +317,9 @@ class Loss(nn.modules.loss._Loss):
             elif loss_type.find('topology') >= 0:
                 module = import_module('loss.topology')
                 loss_function = getattr(module, 'topology')()
-
+            elif loss_type.find('rec') >= 0:
+                module = import_module('loss.rec')
+                loss_function = getattr(module, 'rec')(args.downsample_gt)
             self.loss.append({
                 'type': loss_type,
                 'weight': float(weight),
@@ -351,11 +353,12 @@ class Loss(nn.modules.loss._Loss):
         if args.load != '': self.load(ckp.dir, cpu=args.cpu)
 
     def forward(self, sr, hr):
+
         losses = []
         loss_wandb = {}
         for i, l in enumerate(self.loss):
             if l['function'] is not None:
-                loss = l['function'](sr, hr)  # mask_weighted L1 loss
+                loss = l['function'](sr, hr)
                 effective_loss = l['weight'] * loss
                 losses.append(effective_loss)
                 self.log[-1, i] += effective_loss.item()

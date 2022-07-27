@@ -40,22 +40,23 @@ class Trainer_burst_ema():
 
         self.error_last = 1e8
 
-    def forward_downsample_gt(self, burst, hr, model, idx_scale=0):
-        h, _ = burst.shape[-2:]
-        burst_odd = burst[..., range(0, h, 2),:]    
-        burst_even = burst[..., range(1, h, 2),:]
-        # burst_odd, burst_even = self.prepare(burst_odd, burst_even, hr)
-        sr_burst_odd = model(burst_odd, idx_scale)
-        sr_burst_even = model(burst_even, idx_scale)
-        # combine
-        h_hr, _ = hr.shape[-2:]
-        out = torch.zeros_like(hr)
-        out[..., range(0, h_hr, 2), :] = sr_burst_odd
-        out[..., range(1, h_hr, 2), :] = sr_burst_even
-        return out
+    # def forward_downsample_gt(self, burst, model, idx_scale=0):
+    #     h, _ = burst.shape[-2:]
+    #     burst_odd = burst[..., range(0, h, 2),:]    
+    #     burst_even = burst[..., range(1, h, 2),:]
+    #     # burst_odd, burst_even = self.prepare(burst_odd, burst_even, hr)
+    #     sr_burst_odd = model(burst_odd, idx_scale)
+    #     sr_burst_even = model(burst_even, idx_scale)
+    #     # combine
+    #     # h_hr, _ = hr.shape[-2:]
+    #     # out = torch.zeros_like(hr)
+    #     # out[..., range(0, h_hr, 2), :] = sr_burst_odd
+    #     # out[..., range(1, h_hr, 2), :] = sr_burst_even
+    #     return sr_burst_odd, sr_burst_even
 
     def train(self):
-
+        # os.environ["WANDB_API_KEY"] = 
+        # os.environ["WANDB_MODE"] = "offline"
         wandb.init(project='burst_sr_ema', name=self.args.save, entity='p3kkk', config=self.args)
 
         self.loss.step()
@@ -86,22 +87,18 @@ class Trainer_burst_ema():
             timer_model.tic()
 
             self.optimizer.zero_grad()
-            if self.downsample_gt:
-                sr = self.forward_downsample_gt(burst, hr, self.model)
-                self.model_ema = ema(self.model, self.model_ema, decay=0.999)
-                sr_ema = self.forward_downsample_gt(burst, hr, self.model_ema)
-            else:
-                sr = self.model(burst, 0)
-                self.model_ema = ema(self.model, self.model_ema, decay=0.999)
-                sr_ema = self.model_ema(burst,0)
-
+            sr = self.model(burst, 0)
+            self.model_ema = ema(self.model, self.model_ema, decay=0.999)
+            sr_ema = self.model_ema(burst,0)
             if isinstance(sr, tuple):
-                model_out = sr + sr_ema
+                model_out = sr + sr_ema + patch_cord
             else:
-                model_out = [sr, sr_ema]
-
+                model_out = [sr, sr_ema, patch_cord]
+            
             loss, loss_wandb = self.loss(model_out, hr)
+            print('loss',loss_wandb)
             loss.backward()
+            print('backward')
             if self.args.gclip > 0:
                 utils.clip_grad_value_(
                     self.model.parameters(),
@@ -162,10 +159,14 @@ class Trainer_burst_ema():
                     burst, hr = self.prepare(burst, hr)
 
                     with torch.no_grad():
-                        if self.downsample_gt:
-                            sr = self.forward_downsample_gt(burst, hr, self.model, idx_scale)
-                        else:
-                            sr = self.model(burst, idx_scale)
+                        # if self.downsample_gt:
+                        #     sr_odd, sr_even = self.forward_downsample_gt(burst, self.model, idx_scale)
+                        #     sr = torch.zeros_like(hr)
+                        #     h, _ = sr.shape[-2:]
+                        #     sr[..., range(0, h, 2), :] = sr_odd
+                        #     sr[..., range(1, h, 2), :] = sr_even
+                        # else:
+                        sr = self.model(burst, idx_scale)
 
                     sr, hr = self.center_crop(sr, hr)
                     sr = utility.quantize(sr, self.args.rgb_range)
