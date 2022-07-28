@@ -198,6 +198,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
         frames, gt, meta_info, start_row = self.get_burst(index, im_ids)
 
         # print('***', frames[0].shape, gt.shape)
+        # k
         # Extract crop if needed
         if self.split == 'train':
             ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.patch_size, scale=self.args.scale[0])

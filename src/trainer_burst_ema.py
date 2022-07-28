@@ -57,7 +57,7 @@ class Trainer_burst_ema():
     def train(self):
         # os.environ["WANDB_API_KEY"] = 
         # os.environ["WANDB_MODE"] = "offline"
-        wandb.init(project='burst_sr_ema', name=self.args.save, entity='p3kkk', config=self.args)
+        # wandb.init(project='burst_sr_ema', name=self.args.save, entity='p3kkk', config=self.args)
 
         self.loss.step()
         epoch = self.optimizer.get_last_epoch() + 1
@@ -88,6 +88,7 @@ class Trainer_burst_ema():
 
             self.optimizer.zero_grad()
             sr = self.model(burst, 0)
+
             self.model_ema = ema(self.model, self.model_ema, decay=0.999)
             sr_ema = self.model_ema(burst,0)
             if isinstance(sr, tuple):
@@ -96,9 +97,7 @@ class Trainer_burst_ema():
                 model_out = [sr, sr_ema, patch_cord]
             
             loss, loss_wandb = self.loss(model_out, hr)
-            print('loss',loss_wandb)
             loss.backward()
-            print('backward')
             if self.args.gclip > 0:
                 utils.clip_grad_value_(
                     self.model.parameters(),
@@ -121,10 +120,10 @@ class Trainer_burst_ema():
             else:
                 base_input = burst
             # print('base_input', base_input.shape)
-            wandb.log({'total_loss': loss, 'loss': loss_wandb, 'epoch':epoch,
-            'burst_output': wandb.Image(sr),
-            'gt': wandb.Image(hr),
-            'base_input': wandb.Image(base_input)})
+            # wandb.log({'total_loss': loss, 'loss': loss_wandb, 'epoch':epoch,
+            # 'burst_output': wandb.Image(sr),
+            # 'gt': wandb.Image(hr),
+            # 'base_input': wandb.Image(base_input)})
 
             timer_data.tic()
                 
