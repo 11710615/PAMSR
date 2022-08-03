@@ -56,6 +56,8 @@ parser.add_argument('--output_channels', type=int, default=1,
                     help='output_channels')
 parser.add_argument('--chop', action='store_true',
                     help='enable memory-efficient forward')
+parser.add_argument('--tile', action='store_true', 
+                    help='test the model with tile-like input')
 parser.add_argument('--no_augment', action='store_true',
                     help='do not use data augmentation')
 
@@ -145,6 +147,7 @@ parser.add_argument('--weight_decay', type=float, default=0,
                     help='weight decay')
 parser.add_argument('--gclip', type=float, default=0,
                     help='gradient clipping threshold (0 = no clipping)')
+
 
 # Loss specifications
 parser.add_argument('--loss', type=str, default='1*L1',

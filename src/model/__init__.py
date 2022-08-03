@@ -20,9 +20,11 @@ class Model(nn.Module):
         self.input_large = (args.model == 'VDSR')
         self.self_ensemble = args.self_ensemble
         self.chop = args.chop
+        self.tile = args.tile
         self.precision = args.precision
         self.cpu = args.cpu
         self.device = torch.device('cpu' if args.cpu else 'cuda')
+        self.args = args
         # self.n_GPUs = args.n_GPUs
         self.gpu_ids = args.gpu_ids
         # print('***',self.gpu_ids)
@@ -56,6 +58,8 @@ class Model(nn.Module):
         else:
             if self.chop:
                 forward_function = self.forward_chop
+            elif self.tile:
+                forward_function = self.forward_tile
             else:
                 forward_function = self.model.forward
 
@@ -286,3 +290,30 @@ class Model(nn.Module):
         if len(y) == 1: y = y[0]
 
         return y
+
+    def forward_tile(self, img_lq, tile=64, window_size=8):
+        # test the image tile by tile
+        # [1,1,256,512]
+        b, c, h, w = img_lq.size()
+        tile = min(tile, h, w)
+        assert tile % window_size == 0, "tile size should be a multiple of window_size"
+        tile_overlap = 4  # overlap for tile
+        sf = self.scale[0]
+        stride = tile - tile_overlap
+        h_idx_list = list(range(0, h-tile, stride)) + [h-tile]
+        w_idx_list = list(range(0, w-tile, stride)) + [w-tile]
+        E = torch.zeros(b, c, h*sf, w*sf).type_as(img_lq)
+        W = torch.zeros_like(E)
+
+        for h_idx in h_idx_list:
+            for w_idx in w_idx_list:
+                in_patch = img_lq[..., h_idx:h_idx+tile, w_idx:w_idx+tile]
+                out_patch = self.model(in_patch)
+                out_patch_mask = torch.ones_like(out_patch)
+
+                E[..., h_idx*sf:(h_idx+tile)*sf, w_idx*sf:(w_idx+tile)*sf].add_(out_patch)
+                W[..., h_idx*sf:(h_idx+tile)*sf, w_idx*sf:(w_idx+tile)*sf].add_(out_patch_mask)
+        output = E.div_(W)
+
+        return output
+

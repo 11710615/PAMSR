@@ -134,13 +134,13 @@ class BurstSRDataset(torch.utils.data.Dataset):
 
     def _sample_images(self):  # keep ids=0 as the base frame
         # burst_size_max = self.args.burst_size_max
-        ids = list(range(self.burst_size))  # select burst img regularly     
+        ids = list(range(self.burst_size))  # select burst img regularly  [0,1,2,3,...]   
         # ids = random.sample(range(1, burst_size_max), k=self.burst_size - 1)
         # ids = [0, ] + ids
         return ids
     
     def _get_crop(self, frames, gt, patch_size=(64,64), scale=2, center_crop=False):
-        ih, iw = frames[0].shape[:2]  # 256,512
+        ih, iw = frames[0].shape[:2]  # 256,
         p = scale
         
         tp = [num * scale for num in patch_size]

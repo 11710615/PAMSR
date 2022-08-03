@@ -1,4 +1,5 @@
 from importlib import import_module
+from operator import mod
 from cv2 import split
 #from dataloader import MSDataLoader
 from torch.utils.data import dataloader
@@ -29,6 +30,10 @@ class Data:
                     module_name = d
                     m = import_module('data.'+module_name.lower())
                     datasets.append(getattr(m, 'BurstSRDataset')(args, split='train'))
+                elif d in ['burst_v2']:
+                    module_name = d
+                    m = import_module('data.' + module_name.lower())
+                    datasets.append(getattr(m, 'BurstSRDataset')(args, split='train'))
                 else:
                     module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
                     m = import_module('data.' + module_name.lower())
@@ -58,7 +63,10 @@ class Data:
                     testset = getattr(m, 'BurstSRDataset')(args, split='val_divided')
                 else:
                     testset = getattr(m, 'BurstSRDataset')(args, split='val')
-                
+            elif d in ['burst_v2']:
+                module_name = d
+                m = import_module('data.' + module_name.lower())
+                testset = getattr(m, 'BurstSRDataset')(args, split='val') 
             else:
                 module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
                 m = import_module('data.' + module_name.lower())

@@ -834,7 +834,7 @@ class SwinIR(nn.Module):
             x = self.conv_last(self.upsample(x))
             # change the channel
             x = self.conv_final(x)
-            x = self.act_lat(x) # [0,1]
+            # x = self.act_lat(x) # [0,1]
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR
             x = self.conv_first(x)
