@@ -297,7 +297,7 @@ class Model(nn.Module):
         b, c, h, w = img_lq.size()
         tile = min(tile, h, w)
         assert tile % window_size == 0, "tile size should be a multiple of window_size"
-        tile_overlap = 4  # overlap for tile
+        tile_overlap = self.args.tile_overlap  # overlap for tile  56
         sf = self.scale[0]
         stride = tile - tile_overlap
         h_idx_list = list(range(0, h-tile, stride)) + [h-tile]

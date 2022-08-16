@@ -45,18 +45,22 @@ class timer():
         self.acc = 0
 
 class checkpoint():
-    def __init__(self, args):
+    def __init__(self, args, fold=0):
+        self.fold = str(fold)
         self.args = args
         self.ok = True
         self.log = torch.Tensor()
+        self.fold_best = []
+        self.early_stop = False  # inspect the psnr on val
+        
         now = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
 
         if not args.load:
             if not args.save:
                 args.save = now
-            self.dir = os.path.join('..', 'experiment', args.save)
+            self.dir = os.path.join('..', 'experiment', args.save, self.fold)
         else:
-            self.dir = os.path.join('..', 'experiment', args.load)
+            self.dir = os.path.join('..', 'experiment', args.load, self.fold)
             if os.path.exists(self.dir):
                 self.log = torch.load(self.get_path('psnr_log.pt'))
                 print('Continue from epoch {}...'.format(len(self.log)))
@@ -174,15 +178,17 @@ def calc_psnr(sr,hr,scale,rgb_range,dataset=None):
     if hr.nelement() == 1: return 0
     # k
     # if dataset and dataset.dataset.benchmark:
-    if dataset:
-        shave = scale
-    else:
-        shave = scale + 6
+    # if dataset:
+    #     shave = scale
+    # else:
+    #     shave = scale + 6
+    
     hr = hr.cpu().numpy()
     sr = sr.cpu().numpy()
     # print('output*********',hr.shape, sr.shape)
-    psnr_value = psnr(hr[..., shave:-shave, shave:-shave],sr[..., shave:-shave, shave:-shave],data_range=rgb_range)
-
+    # psnr_value = psnr(hr[..., shave:-shave, shave:-shave],sr[..., shave:-shave, shave:-shave],data_range=rgb_range)
+    psnr_value = psnr(hr, sr,data_range=rgb_range)
+    # print('**',hr.shape, sr.shape, rgb_range)
     return psnr_value
 
 # def calc_psnr(sr, hr, scale, rgb_range, dataset=None):

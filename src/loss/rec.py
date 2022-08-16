@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch
 import cv2
 from tqdm import tqdm
+import torch.nn.functional as F
 
 class rec(nn.Module):
     def __init__(self, downsample_gt=False):
@@ -15,17 +16,31 @@ class rec(nn.Module):
         self.h_idx = torch.from_numpy(rec_map['h_idx']).type(torch.long)
         self.w_idx = torch.from_numpy(rec_map['w_idx']).type(torch.long)
 
-    # def pad_img(self, patch, patch_cord):
-    #     batch, channel, h, w = patch.shape
-    #     img_pad = torch.zeros((batch, channel, 1024, 1024))
-    #     for b in range(batch):
-    #         if not self.downsample_gt:
-    #             img_pad[b:b+1, :, patch_cord[0][b]:patch_cord[2][b], patch_cord[1][b]:patch_cord[3][b]] = patch[b:b+1,:,:,:]
-    #         else:
-    #             start_row = patch_cord[4]
-    #             for i in range(patch_cord[0][b], h + patch_cord[0][b]):
-    #                 img_pad[b:b+1, :, 2*i+start_row[b]:2*i+start_row[b]+1, patch_cord[1][b]:patch_cord[3][b]] = patch[b:b+1,: ,i-patch_cord[0][b]:i+1-patch_cord[0][b],:]
-    #     return img_pad
+    def get_local_gradient(self, x):
+        kernel_v = [[0, -1, 0], 
+                    [0, 0, 0], 
+                    [0, 1, 0]]
+        kernel_h = [[0, 0, 0], 
+                    [-1, 0, 1], 
+                    [0, 0, 0]]
+        kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
+        kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
+        self.weight_h = nn.Parameter(data = kernel_h, requires_grad = False).cuda()
+        self.weight_v = nn.Parameter(data = kernel_v, requires_grad = False).cuda()
+        
+        x_list = []
+        # x = x.to(torch.float32)
+        for i in range(x.shape[1]):
+            x_i = x[:, i]
+            x_i_v = F.conv2d(x_i.unsqueeze(1), self.weight_v, padding=1)
+            x_i_h = F.conv2d(x_i.unsqueeze(1), self.weight_h, padding=1)
+            x_i = torch.sqrt(torch.pow(x_i_v, 2) + torch.pow(x_i_h, 2) + 1e-6)
+            x_list.append(x_i)
+        x = torch.cat(x_list, dim = 1)
+        
+        # # normalize
+        # x = (x-torch.min(x))/torch.max(x)
+        return x  
     
     def rec_img(self, img, patch_cord):
 
@@ -46,11 +61,15 @@ class rec(nn.Module):
         if isinstance(sr, list):
             sr = sr[0]
         # print('**sr', sr.shape)
+        *_, h, w = sr.shape
         sr_rec = self.rec_img(sr, patch_cord)
-        
+        sr_rec_grad = self.get_local_gradient(sr_rec)
+
         hr_rec = self.rec_img(hr, patch_cord)
+        hr_rec_grad = self.get_local_gradient(hr_rec)
         # print('sr***', sr.shape, sr_rec.shape, hr_rec.shape)
-        out = self.L1(sr_rec, hr_rec)
+        out = self.L1(sr_rec_grad, hr_rec_grad)
+        out = out * 1024 * 1024 / h / w
         # print('loss**', out)
         return out
 

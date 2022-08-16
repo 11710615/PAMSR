@@ -3,6 +3,7 @@ import os
 import math
 from decimal import Decimal
 from statistics import mode
+import numpy as np
 
 import utility
 
@@ -15,11 +16,12 @@ import copy
 import wandb
 
 class Trainer_burst_ema():
-    def __init__(self, args, loader, my_model, my_loss, ckp):
+    def __init__(self, args, loader, my_model, my_loss, ckp, fold):
         self.args = args
         self.scale = args.scale
         self.downsample_gt = args.downsample_gt
 
+        self.fold = str(fold)
         self.ckp = ckp
         self.loader_train = loader.loader_train
         self.loader_test = loader.loader_test
@@ -40,31 +42,18 @@ class Trainer_burst_ema():
 
         self.error_last = 1e8
 
-    # def forward_downsample_gt(self, burst, model, idx_scale=0):
-    #     h, _ = burst.shape[-2:]
-    #     burst_odd = burst[..., range(0, h, 2),:]    
-    #     burst_even = burst[..., range(1, h, 2),:]
-    #     # burst_odd, burst_even = self.prepare(burst_odd, burst_even, hr)
-    #     sr_burst_odd = model(burst_odd, idx_scale)
-    #     sr_burst_even = model(burst_even, idx_scale)
-    #     # combine
-    #     # h_hr, _ = hr.shape[-2:]
-    #     # out = torch.zeros_like(hr)
-    #     # out[..., range(0, h_hr, 2), :] = sr_burst_odd
-    #     # out[..., range(1, h_hr, 2), :] = sr_burst_even
-    #     return sr_burst_odd, sr_burst_even
 
     def train(self):
         # os.environ["WANDB_API_KEY"] = 
         # os.environ["WANDB_MODE"] = "offline"
-        # wandb.init(project='burst_sr_ema', name=self.args.save, entity='p3kkk', config=self.args)
+        # wandb.init(project='polar_bv_sr', name=fold_'self.fold+'_'+self.args.save, entity='p3kkk', config=self.args)
 
         self.loss.step()
         epoch = self.optimizer.get_last_epoch() + 1
         lr = self.optimizer.get_lr()  # learning rate
 
         self.ckp.write_log(
-            '[Epoch {}]\tLearning rate: {:.2e}'.format(epoch, Decimal(lr))
+            '[Fold {} Epoch {}]\tLearning rate: {:.2e}'.format(self.fold, epoch, Decimal(lr))
         )
         self.loss.start_log()
         self.model.train()
@@ -83,6 +72,7 @@ class Trainer_burst_ema():
             # print('burst', burst.shape)
             # k
             burst, hr = self.prepare(burst, hr)  # to device
+
             timer_data.hold()
             timer_model.tic()
 
@@ -115,14 +105,18 @@ class Trainer_burst_ema():
                     timer_model.release(),
                     timer_data.release()))
 
-            if len(burst.shape) == 5:
-                base_input = torch.cat([burst[i][0:1] for i in range(burst.shape[0])], axis=0)
-            else:
-                base_input = burst
+            # if len(burst.shape) == 5:
+            #     base_input = torch.cat([burst[i][0:1] for i in range(burst.shape[0])], axis=0)
+            # else:
+            #     base_input = burst
+
+            # sr_rec, hr_rec = self.rec_from_polar(model_out, hr)
             # print('base_input', base_input.shape)
             # wandb.log({'total_loss': loss, 'loss': loss_wandb, 'epoch':epoch,
             # 'burst_output': wandb.Image(sr),
             # 'gt': wandb.Image(hr),
+            # 'gt_rec': wandb.Image(hr_rec),
+            # 'sr_rec': wandb.Image(sr_rec),
             # 'base_input': wandb.Image(base_input)})
 
             timer_data.tic()
@@ -135,7 +129,7 @@ class Trainer_burst_ema():
         torch.set_grad_enabled(False)
 
         epoch = self.optimizer.get_last_epoch()
-        self.ckp.write_log('\nEvaluation:')
+        self.ckp.write_log('\nFold: {}Evaluation:'.format(self.fold))
         self.ckp.add_log(
             torch.zeros(1, len(self.loader_test), len(self.scale))
         )
@@ -186,17 +180,24 @@ class Trainer_burst_ema():
                 self.ckp.log[-1, idx_data, idx_scale] /= len(d)
                 best = self.ckp.log.max(0)
                 self.ckp.write_log(
-                    '[{} x{}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})'.format(
+                    '[{} x{} Fold {}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})'.format(
                         d.dataset.name,
                         scale,
+                        self.fold,
                         self.ckp.log[-1, idx_data, idx_scale],
                         best[0][idx_data, idx_scale],
                         best[1][idx_data, idx_scale] + 1
                     )
                 )
+        # print('**',self.ckp.log[:, idx_data, idx_scale].numpy())
 
         self.ckp.write_log('Forward: {:.2f}s\n'.format(timer_test.toc()))
         self.ckp.write_log('Saving...')
+
+        # early stop when val_psnr stops increasing
+        if epoch==self.args.epochs-1 or (epoch-15 < best[1][idx_data, idx_scale] + 1):
+            self.ckp.fold_best.append(np.round(best[0][idx_data, idx_scale].numpy(),5))
+            self.ckp.early_stop = True
 
         if self.args.save_results:
             self.ckp.end_background()
@@ -238,3 +239,26 @@ class Trainer_burst_ema():
         sr_crop = sr[...,ih:ih+h_crop, iw:iw+w_crop]
         hr_crop = hr[...,ih:ih+h_crop, iw:iw+w_crop]
         return sr_crop, hr_crop  
+    
+    def rec_img(self, img, patch_cord, h_idx, w_idx):
+        # patch_cord = [h,w,h_size, w_size, start_row][b]
+        b,c,*_ = img.shape
+        imgReconstruction = torch.zeros([b,c,1024,1024]).type_as(img)  # [b,1,h,w]
+        for i in range(b):
+            h_ii = h_idx[patch_cord[0][i]:patch_cord[2][i], patch_cord[1][i]:patch_cord[3][i]].flatten()
+            w_ii = w_idx[patch_cord[0][i]:patch_cord[2][i], patch_cord[1][i]:patch_cord[3][i]].flatten()
+            # print('***',h_ii.shape, len(w_ii), img.shape,patch_cord[0][i],patch_cord[2][i], patch_cord[1][i],patch_cord[3][i])
+            imgReconstruction[i:i+1,:,h_ii, w_ii] = img[i:i+1,:,:,:].flatten()
+        return imgReconstruction
+
+    def rec_from_polar(self, model_out, hr):
+        rec_map = np.load('./loss/rec_map.npy', allow_pickle=True).item()
+        h_idx = torch.from_numpy(rec_map['h_idx']).type(torch.long)
+        w_idx = torch.from_numpy(rec_map['w_idx']).type(torch.long)
+
+        patch_cord = model_out[-1]
+        if isinstance(model_out, list):
+            sr = model_out[0]
+        sr_rec = self.rec_img(sr, patch_cord, h_idx, w_idx)
+        hr_rec = self.rec_img(hr, patch_cord, h_idx, w_idx)
+        return sr_rec, hr_rec

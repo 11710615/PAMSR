@@ -21,7 +21,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
         hr: [b, 1, h/2, w]
 
         lr is generated from hr with mask"""
-    def __init__(self, args, name='BurstSRDataset', center_crop=False, split='train'):
+    def __init__(self, args, data_id, name='BurstSRDataset', center_crop=False, split='train'):
         """
         args:
             root : path of the root directory
@@ -35,7 +35,8 @@ class BurstSRDataset(torch.utils.data.Dataset):
         assert self.burst_size <= 25, 'burst_sz must be less than or equal to 14'
         assert split in ['train', 'val', 'val_divided']
         root = args.data_train[0]  # list
-        root = args.dir_data + '/' + root + '/' + split
+        # root = args.dir_data + '/' + root + '/' 
+        root = args.dir_data + '/' + root
         super().__init__()
         self.args = args
         # self.burst_size = burst_size
@@ -48,7 +49,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
         self.substract_black_level = True
         self.white_balance = False
 
-        self.burst_list = self._get_burst_list()
+        self.burst_list = self._get_burst_list(data_id)
         if self.split == 'train':
 
             n_patch = args.batch_size * args.test_every
@@ -58,10 +59,15 @@ class BurstSRDataset(torch.utils.data.Dataset):
             else:
                 self.repeat = max(n_patch // n_image, 1)
 
-    def _get_burst_list(self):
-        burst_list = sorted(os.listdir(self.root))  # 'busrst_data/train'
+    def _get_burst_list(self, data_id):
+        burst_list = os.listdir(self.root)  # 'busrst_data/train'
         #print(burst_list)
-        return burst_list  # 'brain_1','brain_3',...,'ear_8'
+        if self.split == 'train':
+            data_id = data_id[0]
+        else:
+            data_id = data_id[1]
+        out = [burst_list[i] for i in data_id]
+        return out  # 'brain_1','brain_3',...,'ear_8'
 
     def get_burst_info(self, burst_id):
         burst_info = {'burst_size': 25, 'burst_name': self.burst_list[burst_id]}
@@ -70,36 +76,26 @@ class BurstSRDataset(torch.utils.data.Dataset):
     def _get_lr_image(self, burst_id, im_id, start_row=0):  # directly read image and to tensor
         ################## get burst_lr ##################
         scale = self.args.scale[0]
-        if self.split != 'val_divided':
-            # im_id: 0-24, burst_id:0-56
-            if not os.path.exists(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png'):
-                hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
-            else:
-                hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png', 0)
-            
-            # median filter to remove noise
-            # hr_image = cv2.medianBlur(hr_image, ksize=3)
-            
-            # padding [1000,1000] -> [1024, 1024]
-            hr_image = cv2.copyMakeBorder(hr_image, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
-            
-            if hr_image is None:
-                # hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
-                print('path is not exist: ', self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id) + '_X1_X1.png')
-            
-            if self.downsample_gt:
-                h,_ = hr_image.shape[-2:]
-                hr_image = hr_image[...,range(start_row,h,2),:]
-
+        # im_id: 0-24, burst_id:0-56
+        if not os.path.exists(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png'):
+            hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
         else:
-            hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id], 0)
+            hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png', 0)
+        
+        # median filter to remove noise
+        # hr_image = cv2.medianBlur(hr_image, ksize=3)
+        
+        # padding [1000,1000] -> [1024, 1024]
+        hr_image = cv2.copyMakeBorder(hr_image, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
+        
+        if hr_image is None:
+            # hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
+            print('path is not exist: ', self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id) + '_X1_X1.png')
+        
+        if self.downsample_gt:
+            h,_ = hr_image.shape[-2:]
+            hr_image = hr_image[...,range(start_row,h,2),:]
 
-            # median filter to remove noise
-            # hr_image = cv2.medianBlur(hr_image, ksize=3)
-
-            hr_image = cv2.copyMakeBorder(hr_image, 6, 6, 12, 12, cv2.BORDER_CONSTANT, value=0)  # [512,1024]
-            if hr_image is None:
-                print('path is not exist: ', self.root + '/' + self.burst_list[burst_id])
         lr_image = down_sample(hr_image, scale=scale)
         lr_image = (lr_image - lr_image.min()) / lr_image.max()
         lr_image = torch.from_numpy(lr_image)

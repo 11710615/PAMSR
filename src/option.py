@@ -36,9 +36,9 @@ parser.add_argument('--use_ema', action='store_true',
 
 parser.add_argument('--dir_demo', type=str, default='../test',
                     help='demo image directory')
-parser.add_argument('--data_train', type=str, default='burst_v1',
+parser.add_argument('--data_train', type=str, default='burst_v3',
                     help='train dataset name')
-parser.add_argument('--data_test', type=str, default='burst_v1',
+parser.add_argument('--data_test', type=str, default='burst_v3',
                     help='test dataset name')
 parser.add_argument('--data_range', type=str, default='1-88/1-32',
                     help='train/test data range')
@@ -58,6 +58,8 @@ parser.add_argument('--chop', action='store_true',
                     help='enable memory-efficient forward')
 parser.add_argument('--tile', action='store_true', 
                     help='test the model with tile-like input')
+parser.add_argument('--tile_overlap', type=int, default=4,
+                    help='overlap for tiles, stride = tile-tile_overlap')
 parser.add_argument('--no_augment', action='store_true',
                     help='do not use data augmentation')
 
@@ -108,9 +110,11 @@ parser.add_argument('--reduction', type=int, default=16,
                     help='number of feature maps reduction')
 
 # Training specifications
+parser.add_argument('--entrop_select', action='store_true',
+                    help='whether using entrop to select patch for training')
 parser.add_argument('--reset', action='store_true',
                     help='reset the training')
-parser.add_argument('--test_every', type=int, default=1000,
+parser.add_argument('--test_every', type=int, default=1000,  #1000
                     help='do test per every N batches')
 parser.add_argument('--epochs', type=int, default=200,
                     help='number of epochs to train')
@@ -180,6 +184,9 @@ args.scale = list(map(lambda x: int(x), args.scale.split('+')))
 args.data_train = args.data_train.split('+')
 args.data_test = args.data_test.split('+')
 
+if args.test_only:
+    args.tile_overlap =64 -  32 // int(args.scale[0])  # scale=4: 56, scale=2: 48
+    # print('**', args.tile_overlap)
 # set gpu ids
 str_ids = args.gpu_ids.split(',')
 args.gpu_ids = []
