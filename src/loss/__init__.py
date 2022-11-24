@@ -1,3 +1,4 @@
+from ast import operator
 from cmath import nan
 from operator import mod
 import os
@@ -5,6 +6,7 @@ from importlib import import_module
 from turtle import forward
 
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -14,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from model import common
-
+from kornia.losses import ssim_loss as ssim_m
 import wandb
 
 class Gradient_L1(nn.Module):
@@ -24,12 +26,12 @@ class Gradient_L1(nn.Module):
         self.l1 = nn.L1Loss()
 
     def get_local_gradient(self, x):
-        kernel_v = [[0, -1, 0], 
+        kernel_v = [[-1, -2, -1], 
                     [0, 0, 0], 
-                    [0, 1, 0]]
-        kernel_h = [[0, 0, 0], 
-                    [-1, 0, 1], 
-                    [0, 0, 0]]
+                    [1, 2, 1]]
+        kernel_h = [[-1, 0, 1], 
+                    [-2, 0, 2], 
+                    [-1, 0, 1]]
         kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
         kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
         self.weight_h = nn.Parameter(data = kernel_h, requires_grad = False).cuda()
@@ -83,12 +85,12 @@ class Gradient_WL1(nn.Module):
         return pixel_level_weight
 
     def get_local_gradient(self, x):
-        kernel_v = [[0, -1, 0], 
+        kernel_v = [[-1, -2, -1], 
                     [0, 0, 0], 
-                    [0, 1, 0]]
-        kernel_h = [[0, 0, 0], 
-                    [-1, 0, 1], 
-                    [0, 0, 0]]
+                    [1, 2, 1]]
+        kernel_h = [[-1, 0, 1], 
+                    [-2, 0, 2], 
+                    [-1, 0, 1]]
         kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
         kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
         self.weight_h = nn.Parameter(data = kernel_h, requires_grad = False).cuda()
@@ -214,8 +216,7 @@ class InvWL1(nn.Module):
         # print('output',torch.max(overall_weight),out,torch.max(patch_level_weight),torch.max(pixel_level_weight))
         # r
         return out
-
-
+    
 # rewrite L1 loss
 class RL1(nn.Module):
     def __init__(self):
@@ -229,6 +230,20 @@ class RL1(nn.Module):
         else:
             sr = sr
         out = self.l1(sr,hr)
+        return out
+    
+# ssim loss before rec
+class ssimloss(nn.Module):
+    def __init__(self):
+        super(ssimloss, self).__init__()
+    def forward(self,sr,hr): # sr: tuple
+        if isinstance(sr, list):
+            sr = sr[0]
+        elif isinstance(sr, tuple):
+            sr = sr[0]
+        else:
+            sr = sr
+        out = ssim_m(sr, hr, 5)
         return out
 
 class L1GM(nn.Module):
@@ -282,6 +297,11 @@ class Loss(nn.modules.loss._Loss):
                 loss_function = L1GM()
             elif loss_type == 'L1RG':
                 loss_function = L1RG()
+            elif loss_type == 'ssim_rec':
+                module = import_module('loss.ssim')
+                loss_function = getattr(module, 'SSIM')()
+            elif loss_type == 'ssim':
+                loss_function = ssimloss()
             elif loss_type.find('VGG') >= 0:
                 module = import_module('loss.vgg')
                 loss_function = getattr(module, 'VGG')(
@@ -317,9 +337,15 @@ class Loss(nn.modules.loss._Loss):
             elif loss_type.find('topology') >= 0:
                 module = import_module('loss.topology')
                 loss_function = getattr(module, 'topology')()
-            elif loss_type.find('rec') >= 0:
+            elif loss_type == 'rec':  # rec_gradloss
                 module = import_module('loss.rec')
-                loss_function = getattr(module, 'rec')(args.downsample_gt)
+                loss_function = getattr(module, 'rec')(whether_rec=True)
+            elif loss_type == 'gradloss':
+                module = import_module('loss.gradloss')
+                loss_function = getattr(module, 'gradloss')(whether_rec=False)
+            elif loss_type == 'GradientLoss':
+                module = import_module('loss.GradientLoss')
+                loss_function = getattr(module, 'GradientLoss')(rec=args.rec, operator=args.operator)
             self.loss.append({
                 'type': loss_type,
                 'weight': float(weight),
@@ -341,10 +367,9 @@ class Loss(nn.modules.loss._Loss):
         device = torch.device('cpu' if args.cpu else 'cuda')
         self.loss_module.to(device)
         if args.precision == 'half': self.loss_module.half()
-        # if not args.cpu and args.n_GPUs > 1:
+        # if not args.cpu and len(args.gpu_ids) > 0:
         #     self.loss_module = nn.DataParallel(
-        #         self.loss_module, range(args.n_GPUs)
-        #     )
+        #         self.loss_module)
         if not args.cpu and len(args.gpu_ids) > 1:
             self.loss_module = nn.DataParallel(
                 self.loss_module, args.gpu_ids

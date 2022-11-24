@@ -7,14 +7,14 @@ import cv2
 from tqdm import tqdm
 import torch.nn.functional as F
 
-class rec(nn.Module):
-    def __init__(self, whether_rec=True):
-        super(rec, self).__init__()
+class gradloss(nn.Module):
+    def __init__(self, whether_rec=False):
+        super(gradloss, self).__init__()
         self.L1 = nn.L1Loss()
         rec_map = np.load('./loss/rec_map.npy', allow_pickle=True).item()
         self.h_idx = torch.from_numpy(rec_map['h_idx']).type(torch.long)
         self.w_idx = torch.from_numpy(rec_map['w_idx']).type(torch.long)
-        self.rec = rec
+        self.rec = whether_rec
     
     def get_local_gradient(self, x):
         kernel_v = [[-1, -2, -1], 

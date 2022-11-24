@@ -938,7 +938,7 @@ class SwinIR_burst(nn.Module):
         conv_burst = nn.Sequential(*conv_burst)
         self.conv_burst = conv_burst
 
-        self.UNet = nn.Sequential(MSF(embed_dim // 2))
+        # self.UNet = nn.Sequential(MSF(embed_dim // 2))
 
         conv_burst_1 = [nn.Conv2d(embed_dim // 2**(i), embed_dim // 2**(i+1), 3, 1, 1) for i in range(1,4)]
         conv_burst_1 += [nn.Conv2d(embed_dim // 16, 1, 3, 1, 1)]
@@ -1057,19 +1057,16 @@ class SwinIR_burst(nn.Module):
             x = self.conv_first_0(x)
             x = self.conv_first(x)
             base_frame_feat = x[0].unsqueeze(0)
-
-            # extract feature with skip connection
-            x = self.conv_after_body(self.forward_features(x)) + x  # [5,180,256,256]
-                
+            
             ## Burst Feature Alignment
             burst_feat = self.def_alignment(x)
-
             ## Refined Aligned Feature
             burst_feat = self.feat_ext1(burst_feat)                
             Residual = burst_feat - base_frame_feat
             Residual = self.cor_conv1(Residual)
             burst_feat += Residual                   # (B, num_features, H/2, W/2)
 
+#############################################################################################
             # burst features fusion
             x = burst_feat.permute(1,0,2,3).contiguous()  # [180,5,256,256]
             x = self.conv_burst(x)  # [180,5,256,256]->[180,180,256,256]
@@ -1078,6 +1075,9 @@ class SwinIR_burst(nn.Module):
             # x = self.UNet(x)  # cuda out of memory n n n
             x = self.con_burst_1(x)
             x = x.permute(1,0,2,3)  # [embed_dim, embed_dim, h, w] [1,180,256,256]
+#############################################################################################
+            # extract feature with skip connection
+            x = self.conv_after_body(self.forward_features(x)) + x  # [1,180,256,256]
 
             # direct upsample
             x = self.conv_before_upsample(x)

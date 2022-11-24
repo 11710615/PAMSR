@@ -27,7 +27,6 @@ class Model(nn.Module):
         self.args = args
         # self.n_GPUs = args.n_GPUs
         self.gpu_ids = args.gpu_ids
-        # print('***',self.gpu_ids)
         self.save_models = args.save_models
 
         module = import_module('model.' + args.model.lower())
@@ -44,6 +43,7 @@ class Model(nn.Module):
         print(self.model, file=ckp.log_file)
 
     def forward(self, x, idx_scale):
+
         self.idx_scale = idx_scale
         if hasattr(self.model, 'set_scale'):
             self.model.set_scale(idx_scale)
@@ -115,68 +115,13 @@ class Model(nn.Module):
         if load_from:
             self.model.load_state_dict(load_from, strict=False)
 
-    # def split_patch(self,img, shave, n_patch=4):
-    #     h, w = img[0].size()[-2:]
-    #     n_p = int(np.sqrt(n_patch))
-    #     patch_h = h // n_p
-    #     patch_w = w // n_p
-    #     print('patch',patch_h,h,w)
-    #     patch_list = []
-    #     for i in range(n_p):
-    #         if i == n_p-1:
-    #             h0 = slice(i*patch_h-2*shave, (i+1)*patch_h)
-    #         elif i==0:
-    #             h0 = slice(i*patch_h,(i+1)*patch_h+2*shave)
-    #         else:
-    #             h0 = slice(i*patch_h-shave, (i+1)*patch_h+shave)
-    #         for j in range(n_p):
-    #             if j == n_p-1:
-    #                 w0 = slice(j*patch_w-2*shave, (j+1)*patch_w)
-    #             elif j == 0:
-    #                 w0 = slice(j*patch_w, (j+1)*patch_w+2*shave)
-    #             else:
-    #                 w0 = slice(j*patch_w-shave, (j+1)*patch_w+shave)
-    #             patch_list.append(img[...,h0, w0])
-            
-    #     return torch.cat(patch_list)
-
-    # def merge_patch(self, patch_list, shave):
-    #     patch_list = patch_list[0]
-    #     b, c, patch_h, patch_w = patch_list[0].size()
-    #     n_p = int(np.sqrt(len(patch_list)))
-    #     out_h = int((patch_h - 4*shave)*n_p)
-    #     out_w = int((patch_w - 4*shave)*n_p)
-    #     merge_out = torch.zeros([b, c, out_h, out_w])
-    #     print('*****merge', merge_out.shape, out_h,patch_h,n_p)
-    #     patch_idx = 0
-    #     for i in range(n_p):
-    #         patch_idx = i * n_p
-    #         if i == n_p-1:
-    #             h0 = slice(-(patch_h-4*shave), None)
-    #         elif i == 0:
-    #             h0 = slice(0, (patch_h-4*shave))
-    #         else:
-    #             h0 = slice(2*shave, -2*shave)
-    #         h_merge = slice(i*(patch_h-4*shave),(i+1)*(patch_h-4*shave))
-    #         for j in range(n_p):
-    #             patch_idx_temp = patch_idx + j
-    #             if j == n_p-1:
-    #                 w0 = slice(-(patch_w-4*shave), None)
-    #             elif j == 0:
-    #                 w0 = slice(0, patch_w-4*shave)
-    #             else:
-    #                 w0 = slice(2*shave, -2*shave)
-    #             w_merge = slice(j*(patch_w-4*shave), (j+1)*(patch_w-4*shave))
-    #             merge_out[..., h_merge, w_merge] = patch_list[patch_idx_temp][...,h0, w0]
-    #     return merge_out
-
-    def forward_chop(self, *args, shave=10, min_size=160000):
+    def forward_chop(self, *args, shave=10, min_size=1600000):
         scale = 1 if self.input_large else self.scale[self.idx_scale]
         # n_GPUs = min(self.n_GPUs, 4)
         n_GPUs = min(len(self.gpu_ids), 4)
         # height, width
         h, w = args[0].size()[-2:]
-        # shave = int(h % 4)
+
         top = slice(0, h//2 + shave)
         bottom = slice(h - h//2 - shave, h)
         left = slice(0, w//2 + shave)
@@ -187,37 +132,33 @@ class Model(nn.Module):
             a[..., bottom, left],
             a[..., bottom, right]
         ]) for a in args]
-        # n_patch = 4
-        # x_chops = [self.split_patch(a, shave, n_patch) for a in args]
-
+        print(len(args), x_chops[0].shape, len(x_chops))
+        for a in args:
+            print(a.shape,'+++++')
         y_chops = []
         if h * w < 4 * min_size:
             for i in range(0, 4, n_GPUs):
                 x = [x_chop[i:(i + n_GPUs)] for x_chop in x_chops]
                 # y = P.data_parallel(self.model, *x, range(n_GPUs))
-                y = P.data_parallel(self.model, *x, self.gpu_ids)  #[[3,1,540,540],[3,1,540,540]]=[[sr_out],[gm_out]]
-                if isinstance(y,tuple):
-                    y = y[0]  # output tuple for spsr
+                y = P.data_parallel(self.model, *x, self.gpu_ids)
                 if not isinstance(y, list): y = [y]
                 if not y_chops:
                     y_chops = [[c for c in _y.chunk(n_GPUs, dim=0)] for _y in y]
                 else:
                     for y_chop, _y in zip(y_chops, y):
                         y_chop.extend(_y.chunk(n_GPUs, dim=0))
-
         else:
             for p in zip(*x_chops):
+                # p_temp = p[0]
+                # p_temp = p_temp.unsqueeze(0)
+                # print(p_temp.shape,'----')
+                # out = (p_temp)
                 y = self.forward_chop(*p, shave=shave, min_size=min_size)
-                if isinstance(y,tuple): 
-                    y = y[0]  # output tuple for spsr
                 if not isinstance(y, list): y = [y]
                 if not y_chops:
                     y_chops = [[_y] for _y in y]
                 else:
                     for y_chop, _y in zip(y_chops, y): y_chop.append(_y)
-
-        
-        # y = self.merge_patch(y_chops, shave=shave)
 
         h *= scale
         w *= scale
@@ -231,16 +172,13 @@ class Model(nn.Module):
         # batch size, number of color channels
         b, c = y_chops[0][0].size()[:-2]
         y = [y_chop[0].new(b, c, h, w) for y_chop in y_chops]
-        # print('y_chop', len(y_chops[0]), y[0].shape)
-        # k
         for y_chop, _y in zip(y_chops, y):
             _y[..., top, left] = y_chop[0][..., top, left]
             _y[..., top, right] = y_chop[1][..., top, right_r]
             _y[..., bottom, left] = y_chop[2][..., bottom_r, left]
             _y[..., bottom, right] = y_chop[3][..., bottom_r, right_r]
 
-        if isinstance(y,list):
-             y = y[0]
+        if isinstance(y,list): y = y[0]
 
         return y
 
@@ -294,7 +232,11 @@ class Model(nn.Module):
     def forward_tile(self, img_lq, tile=64, window_size=8):
         # test the image tile by tile
         # [1,1,256,512]
-        b, c, h, w = img_lq.size()
+        # if len(img_lq.shape)==5:
+        #     img_lq = img_lq.permute(2,0,1,3,4).squeeze(0)
+        # batch, burst, c, h, w = img_lq.size()
+        batch = img_lq.shape[0]
+        c, h, w = img_lq.shape[-3:]
         tile = min(tile, h, w)
         assert tile % window_size == 0, "tile size should be a multiple of window_size"
         tile_overlap = self.args.tile_overlap  # overlap for tile  56
@@ -302,7 +244,7 @@ class Model(nn.Module):
         stride = tile - tile_overlap
         h_idx_list = list(range(0, h-tile, stride)) + [h-tile]
         w_idx_list = list(range(0, w-tile, stride)) + [w-tile]
-        E = torch.zeros(b, c, h*sf, w*sf).type_as(img_lq)
+        E = torch.zeros(batch, c, h*sf, w*sf).type_as(img_lq)
         W = torch.zeros_like(E)
 
         for h_idx in h_idx_list:

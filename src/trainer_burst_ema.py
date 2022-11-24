@@ -14,6 +14,7 @@ from tqdm import tqdm
 from model.common import Get_gradient, ema
 import copy
 import wandb
+from loss.GradientLoss import CannyFilter
 
 class Trainer_burst_ema():
     def __init__(self, args, loader, my_model, my_loss, ckp, fold):
@@ -28,7 +29,7 @@ class Trainer_burst_ema():
 
         self.model = my_model
         self.loss = my_loss
-
+        # self.cannyfilrer = CannyFilter(use_cuda=False)
         # ema model
         self.model_ema = copy.deepcopy(self.model)  # the tensor's status is also copied
         # self.model_ema.eval() # batchsize to 1?
@@ -46,7 +47,7 @@ class Trainer_burst_ema():
     def train(self):
         # os.environ["WANDB_API_KEY"] = 
         # os.environ["WANDB_MODE"] = "offline"
-        # wandb.init(project='polar_bv_sr', name=fold_'self.fold+'_'+self.args.save, entity='p3kkk', config=self.args)
+        # wandb.init(project='proposed', name='fold_'+self.fold+'_'+self.args.save, entity='p3kkk', config=self.args)
 
         self.loss.step()
         epoch = self.optimizer.get_last_epoch() + 1
@@ -105,19 +106,22 @@ class Trainer_burst_ema():
                     timer_model.release(),
                     timer_data.release()))
 
-            # if len(burst.shape) == 5:
-            #     base_input = torch.cat([burst[i][0:1] for i in range(burst.shape[0])], axis=0)
-            # else:
-            #     base_input = burst
+            if len(burst.shape) == 5:
+                base_input = torch.cat([burst[i][0:1] for i in range(burst.shape[0])], axis=0)
+            else:
+                base_input = burst
 
+            # hr_sobel, hr_canny = self.cannyfilrer(hr)
+            # sr_sobel, sr_canny = self.cannyfilrer(sr)
             # sr_rec, hr_rec = self.rec_from_polar(model_out, hr)
             # print('base_input', base_input.shape)
             # wandb.log({'total_loss': loss, 'loss': loss_wandb, 'epoch':epoch,
             # 'burst_output': wandb.Image(sr),
             # 'gt': wandb.Image(hr),
-            # 'gt_rec': wandb.Image(hr_rec),
-            # 'sr_rec': wandb.Image(sr_rec),
-            # 'base_input': wandb.Image(base_input)})
+            # 'hr_sobel': wandb.Image(hr_sobel),
+            # 'sr_sobel': wandb.Image(sr_sobel),
+            # 'hr_canny': wandb.Image(hr_canny),
+            # 'sr_canny': wandb.Image(sr_canny)})
 
             timer_data.tic()
                 
@@ -138,6 +142,7 @@ class Trainer_burst_ema():
         timer_test = utility.timer()
         if self.args.save_results:
             self.ckp.begin_background()
+        eval_value = np.zeros([4])
         for idx_data, d in enumerate(self.loader_test):
             for idx_scale, scale in enumerate(self.scale):
 
@@ -163,10 +168,21 @@ class Trainer_burst_ema():
 
                     sr, hr = self.center_crop(sr, hr)
                     sr = utility.quantize(sr, self.args.rgb_range)
+
                     save_list = [sr]
                     self.ckp.log[-1, idx_data, idx_scale] += utility.calc_psnr(
                         sr, hr, scale, self.args.rgb_range, dataset=d
                     )
+                    # print('**',utility.calc_psnr(sr, hr, scale, self.args.rgb_range, dataset=d))
+                    # print('***111', utility.evaluation(sr.cpu().numpy().squeeze(0).squeeze(0), hr.cpu().numpy().squeeze(0).squeeze(0), self.args.rgb_range)[0])
+                    # k
+                    if self.args.test_only:
+                        psnr_, ssim_ = utility.evaluation(sr.cpu().numpy().squeeze(0).squeeze(0), hr.cpu().numpy().squeeze(0).squeeze(0), self.args.rgb_range)
+                        sr_rec = self.rec_img_test(sr)
+                        hr_rec = self.rec_img_test(hr)
+                        psnr_rec, ssim_rec = utility.evaluation(sr_rec, hr_rec, 255)
+                        eval_value += np.array([psnr_, ssim_, psnr_rec, ssim_rec])
+
                     if self.args.save_gt:
                         if len(burst.shape) == 5:
                             save_list.extend([burst[0][0:1], hr])
@@ -178,24 +194,41 @@ class Trainer_burst_ema():
                     
 
                 self.ckp.log[-1, idx_data, idx_scale] /= len(d)
+                eval_value /= len(d)
                 best = self.ckp.log.max(0)
-                self.ckp.write_log(
-                    '[{} x{} Fold {}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})'.format(
-                        d.dataset.name,
-                        scale,
-                        self.fold,
-                        self.ckp.log[-1, idx_data, idx_scale],
-                        best[0][idx_data, idx_scale],
-                        best[1][idx_data, idx_scale] + 1
+                if self.args.test_only:
+                    self.ckp.write_log(
+                        '[{} x{} Fold {}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})\nSSIM: {:.3f}\t Rec_PSNR: {:.3f} Rec_SSIM: {:.3f}, *{:.3f}'.format(
+                            d.dataset.name,
+                            scale,
+                            self.fold,
+                            self.ckp.log[-1, idx_data, idx_scale],
+                            best[0][idx_data, idx_scale],
+                            best[1][idx_data, idx_scale] + 1,
+                            eval_value[1],
+                            eval_value[2],
+                            eval_value[3],
+                            eval_value[0]
+                        )
                     )
-                )
+                else:
+                    self.ckp.write_log(
+                        '[{} x{} Fold {}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})'.format(
+                            d.dataset.name,
+                            scale,
+                            self.fold,
+                            self.ckp.log[-1, idx_data, idx_scale],
+                            best[0][idx_data, idx_scale],
+                            best[1][idx_data, idx_scale] + 1
+                        )
+                    )
         # print('**',self.ckp.log[:, idx_data, idx_scale].numpy())
 
         self.ckp.write_log('Forward: {:.2f}s\n'.format(timer_test.toc()))
         self.ckp.write_log('Saving...')
 
         # early stop when val_psnr stops increasing
-        if epoch==self.args.epochs-1 or (epoch-15 < best[1][idx_data, idx_scale] + 1):
+        if epoch==self.args.epochs-1 or (epoch-30 > best[1][idx_data, idx_scale] + 1):
             self.ckp.fold_best.append(np.round(best[0][idx_data, idx_scale].numpy(),5))
             self.ckp.early_stop = True
 
@@ -262,3 +295,51 @@ class Trainer_burst_ema():
         sr_rec = self.rec_img(sr, patch_cord, h_idx, w_idx)
         hr_rec = self.rec_img(hr, patch_cord, h_idx, w_idx)
         return sr_rec, hr_rec
+
+def rec_img_test(img):
+    assert(img.shape[-2:] == (1000, 1000))
+    # img = img_pad[...,12:1012, 12:1012]
+    # map_idx = np.zeros_like(img)
+    # img = img.cpu().numpy().squeeze(0).squeeze(0)
+    # img = img * 255
+    amp = 1
+    bScanSumOrigin = 1000
+    bScanNumOrigin = 1000
+    bScanSum, bScanNum = img.shape[-2:]  # [1000,1000]
+
+    mindata = img.min()
+    maxdata = img.max()
+    
+    imgReconstruction = np.zeros_like(img)
+
+    row, column = img.shape[-2:]
+    dR = bScanNumOrigin / bScanNum  # 1
+    dAngle = np.pi / bScanSum
+    dRReconstruction = dR / amp  # 1
+    dAngleReconstruction = dAngle / amp
+    offset = (bScanNum / 2) * amp  # 500
+    
+    for rowIndex in range(1,row+1):
+        for columnIndex in range(1, column+1):
+            r = (offset - columnIndex) * dRReconstruction
+            angle = (rowIndex - 1) * dAngleReconstruction
+            # angle = rowIndex * dAngleReconstruction
+            x = r * np.cos(angle)
+            y = r * np.sin(angle)
+            i = round(x + bScanNumOrigin/2) + 1
+            j = round(y + bScanNumOrigin/2) + 1
+            if j > bScanSumOrigin:
+                j = bScanSumOrigin
+
+            if i > bScanNumOrigin:
+                i = bScanNumOrigin
+            if i < 1:
+                i = 1
+            if j < 1:
+                j = 1
+            if imgReconstruction[...,j-1,i-1] < img[..., rowIndex-1, columnIndex-1]:
+                imgReconstruction[...,j-1,i-1] = img[...,rowIndex-1, columnIndex-1]
+    imgReconstruction = (imgReconstruction - imgReconstruction.min()) / (imgReconstruction.max()-imgReconstruction.min()) * 255
+    imgReconstruction = imgReconstruction.astype('uint8')  
+
+    return imgReconstruction

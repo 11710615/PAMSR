@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import random
 import math
 from bisect import bisect_left
+from .utils_blindsr import degradation_bsrgan
 
 def down_sample(img, scale):
     """down sample with scale"""
@@ -79,7 +80,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
         burst_info = {'burst_size': 25, 'burst_name': self.burst_list[burst_id]}
         return burst_info
 
-    def _get_lr_image(self, burst_id, im_id, start_row=0):  # directly read image and to tensor
+    def _get_lr_image(self, burst_id, im_id):  # directly read image and to tensor
         ################## get burst_lr ##################
         scale = self.args.scale[0]
         # im_id: 0-24, burst_id:0-56
@@ -88,22 +89,23 @@ class BurstSRDataset(torch.utils.data.Dataset):
         else:
             hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png', 0)
         
-        # median filter to remove noise
-        # hr_image = cv2.medianBlur(hr_image, ksize=3)
-        
-        # padding [1000,1000] -> [1024, 1024]
         hr_image = cv2.copyMakeBorder(hr_image, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
         
         if hr_image is None:
             # hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
             print('path is not exist: ', self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id) + '_X1_X1.png')
-        
-        if self.downsample_gt:
-            h,_ = hr_image.shape[-2:]
-            hr_image = hr_image[...,range(start_row,h,2),:]
 
-        lr_image = down_sample(hr_image, scale=scale)
-        lr_image = (lr_image - lr_image.min()) / lr_image.max()
+        if self.split == 'train':
+        # HW -> HW3
+            hr_image = np.expand_dims(hr_image, axis=2)
+            hr_image = np.concatenate([hr_image, hr_image, hr_image], axis=2)
+            hr_image = np.float32(hr_image/255.)
+            
+            lr_image, _ = degradation_bsrgan(hr_image, sf=scale)
+        else:
+            lr_image = down_sample(hr_image, scale=scale)
+            lr_image = (lr_image - lr_image.min()) / lr_image.max()
+        # bsrgan
         lr_image = torch.from_numpy(lr_image)
         return lr_image
 
@@ -121,7 +123,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
             # gt_img = cv2.medianBlur(gt_img, ksize=3)
             gt_img = cv2.copyMakeBorder(gt_img, 6, 6, 12, 12, cv2.BORDER_CONSTANT, value=0)
             
-        gt_img = (gt_img- gt_img.min()) / gt_img.max()  # norm
+        gt_img = np.float32(gt_img/255.)  # norm
         gt_img = torch.from_numpy(gt_img)
         return gt_img
 

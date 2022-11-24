@@ -1,5 +1,7 @@
+from ast import arg
 from importlib import import_module
 from operator import mod
+from tkinter.tix import IMMEDIATE
 from cv2 import split
 #from dataloader import MSDataLoader
 from torch.utils.data import dataloader
@@ -34,10 +36,23 @@ class Data:
                     module_name = d
                     m = import_module('data.' + module_name.lower())
                     datasets.append(getattr(m, 'BurstSRDataset')(args, split='train'))
-                elif d in ['burst_v3']:
+                elif d in ['mid_filter']:
                     module_name = d
                     m = import_module('data.' + module_name.lower())
-                    datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))                
+                    datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
+                elif d in ['burst_bsr']:
+                    module_name = d
+                    m = import_module('data.' + module_name.lower())
+                    datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
+                elif d in ['burst_v3']:
+                    if args.model in ['fd_unet','unet']:
+                        module_name = 'pam_rec'
+                        m = import_module('data.pam_rec')
+                        datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
+                    else:
+                        module_name = d
+                        m = import_module('data.' + module_name.lower())
+                        datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))                
                 else:
                     module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
                     m = import_module('data.' + module_name.lower())
@@ -70,11 +85,24 @@ class Data:
             elif d in ['burst_v2']:
                 module_name = d
                 m = import_module('data.' + module_name.lower())
-                testset = getattr(m, 'BurstSRDataset')(args, split='val') 
-            elif d in ['burst_v3']:
+                testset = getattr(m, 'BurstSRDataset')(args, split='val')
+            elif d in ['mid_filter']:
                 module_name = d
                 m = import_module('data.' + module_name.lower())
-                testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val') 
+                testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
+            elif d in ['burst_bsr']:
+                module_name = d
+                m = import_module('data.' + module_name.lower())
+                testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
+            elif d in ['burst_v3']:
+                if args.model in ['fd_unet','unet']:
+                    module_name = 'pam_rec'
+                    m = import_module('data.pam_rec')
+                    testset = getattr(m,'BurstSRDataset')(args, data_id, split='val') 
+                else:
+                    module_name = d
+                    m = import_module('data.' + module_name.lower())
+                    testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val') 
             else:
                 module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
                 m = import_module('data.' + module_name.lower())

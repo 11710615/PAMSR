@@ -26,7 +26,11 @@ fold_best = []
 def main():
     global model
     for fold, data_id in enumerate(KF.split(data_list)):
-
+        print(fold)
+        if not args.test_only and fold in [1,2,3,4]:  # flag to select fold for training
+            continue
+        if args.test_only and fold != args.fold:  # flag to select fold for testing
+            continue
         checkpoint = utility.checkpoint(args, fold)
         if checkpoint.ok:
             loader = data.Data(args, data_id)
@@ -39,8 +43,10 @@ def main():
                 t.train()
                 t.test()
                 if checkpoint.early_stop is True:
+
+                    fold_best.append(checkpoint.fold_best[0])
                     break
-            fold_best.append(checkpoint.fold_best[0])
+            # fold_best.append(checkpoint.fold_best[0])
             checkpoint.done()
         print('{} fold_best: {} dB'.format(fold, fold_best))
     print('ave_psnr: {:.4f} dB'.format(np.mean(fold_best)))

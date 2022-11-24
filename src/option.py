@@ -18,7 +18,7 @@ parser.add_argument('--cpu', action='store_true',
                     help='use cpu only')
 # parser.add_argument('--n_GPUs', type=int, default=1,
 #                     help='number of GPUs')
-parser.add_argument('--gpu_ids', type=str, default='0',
+parser.add_argument('--gpu_ids', type=str, default='3',
                     help='gpu_ids, default=0')
 parser.add_argument('--seed', type=int, default=1,
                     help='random seed')
@@ -110,13 +110,13 @@ parser.add_argument('--reduction', type=int, default=16,
                     help='number of feature maps reduction')
 
 # Training specifications
-parser.add_argument('--entrop_select', action='store_true',
-                    help='whether using entrop to select patch for training')
+parser.add_argument('--patch_select', type=str, default='random',
+                    help='use entrop or grad to select patch for training')
 parser.add_argument('--reset', action='store_true',
                     help='reset the training')
 parser.add_argument('--test_every', type=int, default=1000,  #1000
                     help='do test per every N batches')
-parser.add_argument('--epochs', type=int, default=200,
+parser.add_argument('--epochs', type=int, default=400,
                     help='number of epochs to train')
 parser.add_argument('--batch_size', type=int, default=8,
                     help='input batch size for training')
@@ -130,8 +130,13 @@ parser.add_argument('--gan_k', type=int, default=1,
                     help='k value for adversarial loss')
 parser.add_argument('--use ema', action='store_true',
                     help='whether use ema')
+parser.add_argument('--fold', type=int, default=0)
+
+parser.add_argument('--rec', action='store_true')
+parser.add_argument('--operator', type=str, default='sobel')
 
 # Optimization specifications
+# 1e-4 --> 5e-4
 parser.add_argument('--lr', type=float, default=1e-4,
                     help='learning rate')
 parser.add_argument('--decay', type=str, default='200',

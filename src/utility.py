@@ -191,6 +191,16 @@ def calc_psnr(sr,hr,scale,rgb_range,dataset=None):
     # print('**',hr.shape, sr.shape, rgb_range)
     return psnr_value
 
+def evaluation(sr, hr, rgb_range):
+    # print('***111', sr.shape, hr.shape)
+    # sr = sr.cpu().numpy().squeeze(0).squeeze(0)
+    # hr = hr.cpu().numpy().squeeze(0).squeeze(0)
+    # print('***', sr.shape, hr.shape)
+    psnr_value = psnr(hr, sr,data_range=rgb_range)
+    ssim_value = ssim(sr, hr, multichannel=False)
+    
+    return psnr_value, ssim_value
+
 # def calc_psnr(sr, hr, scale, rgb_range, dataset=None):
 #     if hr.nelement() == 1: return 0
 #     diff = (sr - hr) / rgb_range
@@ -241,6 +251,7 @@ def make_optimizer(args, target):
 
         def _register_scheduler(self, scheduler_class, **kwargs):
             self.scheduler = scheduler_class(self, **kwargs)
+            # self.scheduler.last_epoch = args.resume - 1
 
         def save(self, save_dir):
             torch.save(self.state_dict(), self.get_dir(save_dir))
