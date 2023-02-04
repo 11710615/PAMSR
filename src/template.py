@@ -7,14 +7,45 @@ def set_template(args):
 
 
     if args.template == 'test_only':
-        args.model = 'Swinir'
+        # args.model = 'EDSR'#'Swinir'
+        # args.n_resblocks = 32
+        # args.n_feats = 256
+        # args.res_scale = 0.1
+        
+        # args.model = 'HAN'#'Swinir'
+        # args.n_resblocks = 20
+        # args.n_feats = 128
+        # args.res_scale = 1
+        # args.rgb_range = 1
+        # args.n_colors = 3
+        # args.output_channels = 1
+        
+        # args.model = 'RCAN'#'Swinir'
+        # args.n_resblocks = 20
+        # args.n_feats = 128
+        # args.res_scale = 1
+        
+        args.model = 'RDN'#'Swinir'
+        args.n_resblocks = 16
+        args.n_feats = 256
+        args.res_scale = 1
+        args.GO = 64
+        
+        
+        # args.model = 'MDSR'#'Swinir'
+        # args.n_resblocks = 16
+        # args.n_feats = 256
+        # args.res_scale = 1
+        
+        
         args.patch_size = (64, 64)
         args.num_features = 180
         args.burst_size = 1
-        args.tile = True
-        args.scale = '4'
-        args.data_train = 'burst_v3'
-        args.data_test = 'burst_v3'
+        args.tile = False
+        args.chop = True
+        args.scale = '2'
+        args.data_train = 'unreg_real_lr'
+        args.data_test = 'unreg_real_lr'
         args.rgb_range = 1
         if args.patch_select=='random':
             flag = ''
@@ -24,10 +55,26 @@ def set_template(args):
         args.test_patch_size = (1024 // int(args.scale), 1024 // int(args.scale))
         # args.save = '*grad_window_L1Warm_polar_swinir_GradientL1_x2_burst-1_1*RL1_lr_0.0001'
         # args.pre_train = '../experiment/'+ args.save + '/0/model/model_194.pt'
-        args.save = 'grad_window_proposed_x4_1*RL1+0.1*rec+0.1*gradloss_norec'
+        args.save = args.template+'_'+args.model + '_' + args.data_train + '_nomid'
+        # args.save = args.template+'_grad_window_proposed_x2_1*RL1+1*ssim_rec' + '_' + args.data_train + '_nomid'
         args.pre_train = '../experiment/'+ args.save + '/0/model/model_best.pt'
 
-
+    if args.template == 'FD_Unet_x2':
+        args.model = 'fd_unet'
+        args.patch_size = (64, 64)
+        args.num_features = 64
+        args.test_patch_size = (1024, 1024)
+        args.chop = True
+        args.tile = False
+        args.no_augment = True
+        args.scale = '2'
+        args.data_train = 'mid_filter'
+        args.data_test = 'mid_filter'
+        args.rgb_range = 1
+        # args.data_train = 'unreg_real_lr'
+        # args.data_test = 'unreg_real_lr'
+        args.save = args.template+'_'+args.model + '_' + args.data_train
+        args.pre_train = '../experiment/'+ args.save + '/0/model/model_best.pt'
 ######################################### influence of burst ###########################
     if args.template == 'swinir_burst':
         args.model = 'Swinir'
@@ -160,7 +207,7 @@ def set_template(args):
 #########################################################################################
 ######################################### bsr ########################################
 #########################################################################################
-    if args.template == 'proposed_x2_bsr':
+    if args.template == 'proposed_x2_syn_bsr':
         args.model = 'Swinir'
         args.patch_size = (64, 64)
         args.num_features = 180
@@ -215,22 +262,54 @@ def set_template(args):
         args.burst_size = 1
         args.tile = True
         args.scale = '2'
-        args.data_train = 'burst_v3'
-        args.data_test = 'burst_v3'
+        args.data_train = 'mid_filter'
+        args.data_test = 'mid_filter'
         args.rgb_range = 1
         if args.patch_select=='random':
             flag = ''
         else:
             flag = args.patch_select + '_'
         args.no_augment = True
-        args.test_patch_size = (512, 512)
+        args.test_patch_size = (1024 // int(args.scale), 1024 // int(args.scale))
         if args.rec:
             flag_rec = 'rec'
         else:
             flag_rec = 'norec'
-        args.save = flag+'proposed_x2_' + args.loss + '_' + flag_rec
+        if args.add_spmap:
+            flag_spmap = args.spmap_mode
+        else:
+            flag_spmap = ''
+        args.save = flag+'proposed_x2_' + args.loss + '_' + flag_rec + '_' + flag_spmap + '_' + args.data_train
         args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
         # args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best.pt'
+        
+    if args.template == 'proposed_x3':
+        args.model = 'Swinir'
+        args.patch_size = (64, 64)
+        args.num_features = 180
+        args.burst_size = 1
+        args.tile = True
+        args.scale = '3'
+        args.data_train = 'mid_filter'
+        args.data_test = 'mid_filter'
+        args.rgb_range = 1
+        if args.patch_select=='random':
+            flag = ''
+        else:
+            flag = args.patch_select + '_'
+        args.no_augment = True
+        args.test_patch_size = (1024 // int(args.scale), 1024 // int(args.scale))
+        if args.rec:
+            flag_rec = 'rec'
+        else:
+            flag_rec = 'norec'
+        if args.add_spmap:
+            flag_spmap = args.spmap_mode
+        else:
+            flag_spmap = ''
+        args.save = flag+'proposed_x3_' + args.loss + '_' + flag_rec + '_' + flag_spmap + '_' + args.data_train
+        #args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best.pt'
+        args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best_x2.pt'
         
     if args.template == 'proposed_x4':
         args.model = 'Swinir'
@@ -239,22 +318,22 @@ def set_template(args):
         args.burst_size = 1
         args.tile = True
         args.scale = '4'
-        args.data_train = 'burst_v3'
-        args.data_test = 'burst_v3'
+        args.data_train = 'mid_filter'
+        args.data_test = 'mid_filter'
         args.rgb_range = 1
         if args.patch_select=='random':
             flag = ''
         else:
             flag = args.patch_select + '_'
         args.no_augment = True
-        args.test_patch_size = (256, 256)
+        args.test_patch_size = (1024 // int(args.scale), 1024 // int(args.scale))
         if args.rec:
             flag_rec = 'rec'
         else:
             flag_rec = 'norec'
-        args.save = flag+'proposed_x4_' + args.loss + '_' + flag_rec
-        # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
-        args.pre_train = '../experiment/'+flag+'proposed_x2_' + args.loss + '_' + flag_rec + '/'+str(args.fold)+'/model/model_best.pt'
+        args.save = flag+'proposed_x4_' + args.loss + '_' + flag_rec + '_' + args.data_train
+        args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best.pt'
+        # args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best_x2.pt'
 
 ###########################################################################
 
@@ -286,8 +365,8 @@ def set_template(args):
         # args.loss = '1*Gradient_L1'
         args.save = flag+'L1Warm_'+'polar_swinir_GradientL1_x2_burst-' +str(args.burst_size)+ '_' + args.loss + '_lr_'+ str(args.lr)
         # args.save = 'grad_window_L1Warm_polar_swinir_GradientL1_x2_burst-1_1*RL1+1*rec'
-        # args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
-        args.pre_train = '../experiment/'+flag+'L1Warm_'+'polar_swinir_GradientL1_x2_burst-' + str(args.burst_size) + '_' + args.loss + '_lr_'+ str(args.lr) + '/'+str(args.fold)+'/model/model_best.pt'
+        args.pre_train = '../experiment1/pretrain_model/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth'
+        # args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best.pt'
         # args.pre_train = '../experiment/'+flag+'L1Warm_'+'polar_swinir_GradientL1_x2_burst-' + str(args.burst_size) + '_' + args.loss + '/'+str(args.fold)+'/model/model_best.pt'
         args.no_augment = True
 

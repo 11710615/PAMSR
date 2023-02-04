@@ -16,8 +16,24 @@ def down_sample(img, scale):
     h,w = img.shape[-2:]
     img_down = img[...,range(0, h, scale), :]
     img_down = img_down[..., :, range(0, w, scale)]
-
     return img_down
+
+def padding_zero(img, scale=2):
+    """down sample with scale and padding zeros"""
+    img_down = img.copy()
+    h,w = img.shape[-2:]
+    for i in range(1,scale):
+        img_down[..., range(i, h, scale),:] = 0
+        for j in range(1,scale):
+            img_down[..., :, range(j, w, scale)] = 0
+    return img_down
+def padding_zero_lr(lr,scale=2):
+    h,w=lr.shape
+    out = np.zeros([h*scale,w*scale])
+    for i in range(h):
+        for j in range(w):
+            out[i*scale, j*scale]=lr[i,j]
+    return out
 
 class BurstSRDataset(torch.utils.data.Dataset):
     """ used for burst dataset
@@ -86,7 +102,6 @@ class BurstSRDataset(torch.utils.data.Dataset):
             hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
         else:
             hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png', 0)
-        
         # median filter to remove noise
         # hr_image = cv2.medianBlur(hr_image, ksize=3)
         
@@ -100,8 +115,11 @@ class BurstSRDataset(torch.utils.data.Dataset):
         if self.downsample_gt:
             h,_ = hr_image.shape[-2:]
             hr_image = hr_image[...,range(start_row,h,2),:]
-
-        lr_image = down_sample(hr_image, scale=scale)
+            
+        if self.args.model == 'fd_unet':
+            lr_image = padding_zero(hr_image, scale=scale)
+        else: 
+            lr_image = down_sample(hr_image, scale=scale)
         lr_image = (lr_image - lr_image.min()) / lr_image.max()
         lr_image = torch.from_numpy(lr_image)
         return lr_image
@@ -145,8 +163,13 @@ class BurstSRDataset(torch.utils.data.Dataset):
         p = scale
         if isinstance(patch_size, int):
             patch_size = [patch_size, patch_size]
-        tp = [num * scale for num in patch_size]
-        ip = [num // scale for num in tp]  # 64
+            
+        if self.args.model == 'fd_unet':
+            tp = [num for num in patch_size]
+            ip = [num for num in tp]  # 64
+        else:
+            tp = [num * scale for num in patch_size]
+            ip = [num // scale for num in tp]  # 64
 
         if center_crop:
             ix = (iw - patch_size[1]) // 2
@@ -220,7 +243,10 @@ class BurstSRDataset(torch.utils.data.Dataset):
                 ix = random.randrange(0, iw - ip[1] + 1)
                 iy = random.randrange(0, ih - ip[0] + 1)
                 
-        tx, ty = scale * ix, scale * iy
+        if self.args.model == 'fd_unet':   
+            tx, ty = ix, iy
+        else:  
+            tx, ty = scale * ix, scale * iy   
         ret = [
             [img[iy:iy + ip[0], ix:ix + ip[1]] for img in frames],
             gt[ty:(ty+tp[0]), tx:(tx+tp[1])]
@@ -261,8 +287,6 @@ class BurstSRDataset(torch.utils.data.Dataset):
 
         # Read the burst images along with HR ground truth
         frames, gt, meta_info, start_row = self.get_burst(index, im_ids)
-
-        # print('***', frames[0].shape, gt.shape)
 
         # Extract crop if needed
         if self.split == 'train':

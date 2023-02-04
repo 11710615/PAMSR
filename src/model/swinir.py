@@ -17,7 +17,7 @@ def make_model(args, parent=False):
                  window_size=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, upscale=args.scale[0], img_range=1., upsampler='pixelshuffle', resi_connection='1conv')
+                 use_checkpoint=False, upscale=args.scale[0], img_range=1., upsampler='pixelshuffle', resi_connection='1conv',add_spmap=args.add_spmap)
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -656,7 +656,7 @@ class SwinIR(nn.Module):
                  window_size=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, upscale=2, img_range=255., upsampler='pixelshuffle', resi_connection='1conv',
+                 use_checkpoint=False, upscale=2, img_range=255., upsampler='pixelshuffle', resi_connection='1conv',add_spmap=False,
                  **kwargs):
 
         super(SwinIR, self).__init__()
@@ -675,7 +675,11 @@ class SwinIR(nn.Module):
 
         #####################################################################################################
         ################################### 1, shallow feature extraction ###################################
-        self.conv_first_0 = nn.Conv2d(burst_size, 3, 3, 1, 1)
+        # concat in channel with a sample map
+        if add_spmap:
+            self.conv_first_0 = nn.Conv2d(burst_size+1, 3, 3, 1, 1)
+        else:
+            self.conv_first_0 = nn.Conv2d(burst_size, 3, 3, 1, 1)
         self.conv_first = nn.Conv2d(num_in_ch, embed_dim, 3, 1, 1)
 
         #####################################################################################################
@@ -857,10 +861,8 @@ class SwinIR(nn.Module):
             res = self.conv_after_body(self.forward_features(x_first)) + x_first
             x = x + self.conv_last(res)
 
-
         x = x * self.img_range  # [0,1]
         # x = x * self.img_range
-
         return x[:, :, :H*self.upscale, :W*self.upscale]
 
     def flops(self):

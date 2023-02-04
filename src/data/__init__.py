@@ -44,6 +44,10 @@ class Data:
                     module_name = d
                     m = import_module('data.' + module_name.lower())
                     datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
+                elif d in ['real_lr', 'unreg_real_lr']:
+                    module_name = 'real_lr'
+                    m = import_module('data.' + module_name.lower())
+                    datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
                 elif d in ['burst_v3']:
                     if args.model in ['fd_unet','unet']:
                         module_name = 'pam_rec'
@@ -92,6 +96,10 @@ class Data:
                 testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
             elif d in ['burst_bsr']:
                 module_name = d
+                m = import_module('data.' + module_name.lower())
+                testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
+            elif d in ['real_lr', 'unreg_real_lr']:
+                module_name = 'real_lr'
                 m = import_module('data.' + module_name.lower())
                 testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
             elif d in ['burst_v3']:

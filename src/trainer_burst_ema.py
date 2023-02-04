@@ -79,6 +79,7 @@ class Trainer_burst_ema():
 
             self.optimizer.zero_grad()
             sr = self.model(burst, 0)
+            # print(sr.shape, burst.shape, hr.shape, 'train')
 
             self.model_ema = ema(self.model, self.model_ema, decay=0.999)
             sr_ema = self.model_ema(burst,0)
@@ -86,7 +87,8 @@ class Trainer_burst_ema():
                 model_out = sr + sr_ema + patch_cord
             else:
                 model_out = [sr, sr_ema, patch_cord]
-            
+            # print(model_out[0].shape, hr.shape, burst.shape, '111')
+            # s
             loss, loss_wandb = self.loss(model_out, hr)
             loss.backward()
             if self.args.gclip > 0:
@@ -145,9 +147,7 @@ class Trainer_burst_ema():
         eval_value = np.zeros([4])
         for idx_data, d in enumerate(self.loader_test):
             for idx_scale, scale in enumerate(self.scale):
-
                 # d.dataset.set_scale(idx_scale)
-
                 for burst, hr, meta_info, patch_cord in tqdm(d, ncols=80): # hr: [1,1,500,250]
                     filename = meta_info['burst_name']
                     if self.output_channels < hr.shape[1]:
@@ -155,19 +155,11 @@ class Trainer_burst_ema():
                     # if hr.shape[1]==3:
                     #     hr = hr[:,0:1,:]
                     burst, hr = self.prepare(burst, hr)
-
                     with torch.no_grad():
-                        # if self.downsample_gt:
-                        #     sr_odd, sr_even = self.forward_downsample_gt(burst, self.model, idx_scale)
-                        #     sr = torch.zeros_like(hr)
-                        #     h, _ = sr.shape[-2:]
-                        #     sr[..., range(0, h, 2), :] = sr_odd
-                        #     sr[..., range(1, h, 2), :] = sr_even
-                        # else:
                         sr = self.model(burst, idx_scale)
-
                     sr, hr = self.center_crop(sr, hr)
                     sr = utility.quantize(sr, self.args.rgb_range)
+                    print()
 
                     save_list = [sr]
                     self.ckp.log[-1, idx_data, idx_scale] += utility.calc_psnr(
@@ -178,6 +170,7 @@ class Trainer_burst_ema():
                     # k
                     if self.args.test_only:
                         psnr_, ssim_ = utility.evaluation(sr.cpu().numpy().squeeze(0).squeeze(0), hr.cpu().numpy().squeeze(0).squeeze(0), self.args.rgb_range)
+                        # print(psnr_, ssim_, 'eva***')
                         sr_rec = self.rec_img_test(sr)
                         hr_rec = self.rec_img_test(hr)
                         psnr_rec, ssim_rec = utility.evaluation(sr_rec, hr_rec, 255)
@@ -230,7 +223,10 @@ class Trainer_burst_ema():
         # early stop when val_psnr stops increasing
         if epoch==self.args.epochs-1 or (epoch-30 > best[1][idx_data, idx_scale] + 1):
             self.ckp.fold_best.append(np.round(best[0][idx_data, idx_scale].numpy(),5))
-            self.ckp.early_stop = True
+            if self.args.data_train[0].find('bsr') >= 0:
+                self.ckp.early_stop = False
+            else:
+                self.ckp.early_stop = True
 
         if self.args.save_results:
             self.ckp.end_background()
@@ -261,6 +257,7 @@ class Trainer_burst_ema():
             return epoch >= self.args.epochs
 
     def center_crop(self, sr, hr):
+        # print(sr.shape, hr.shape, '***')
         assert(sr.shape==hr.shape)
         h, w = sr.shape[-2:]
         h_crop = int(h/100)*100
@@ -296,50 +293,50 @@ class Trainer_burst_ema():
         hr_rec = self.rec_img(hr, patch_cord, h_idx, w_idx)
         return sr_rec, hr_rec
 
-def rec_img_test(img):
-    assert(img.shape[-2:] == (1000, 1000))
-    # img = img_pad[...,12:1012, 12:1012]
-    # map_idx = np.zeros_like(img)
-    # img = img.cpu().numpy().squeeze(0).squeeze(0)
-    # img = img * 255
-    amp = 1
-    bScanSumOrigin = 1000
-    bScanNumOrigin = 1000
-    bScanSum, bScanNum = img.shape[-2:]  # [1000,1000]
+    def rec_img_test(self, img):
+        assert(img.shape[-2:] == (1000, 1000))
+        # img = img_pad[...,12:1012, 12:1012]
+        # map_idx = np.zeros_like(img)
+        img = img.cpu().numpy().squeeze(0).squeeze(0)
+        # img = img * 255
+        amp = 1
+        bScanSumOrigin = 1000
+        bScanNumOrigin = 1000
+        bScanSum, bScanNum = img.shape[-2:]  # [1000,1000]
 
-    mindata = img.min()
-    maxdata = img.max()
-    
-    imgReconstruction = np.zeros_like(img)
+        mindata = img.min()
+        maxdata = img.max()
+        
+        imgReconstruction = np.zeros_like(img)
 
-    row, column = img.shape[-2:]
-    dR = bScanNumOrigin / bScanNum  # 1
-    dAngle = np.pi / bScanSum
-    dRReconstruction = dR / amp  # 1
-    dAngleReconstruction = dAngle / amp
-    offset = (bScanNum / 2) * amp  # 500
-    
-    for rowIndex in range(1,row+1):
-        for columnIndex in range(1, column+1):
-            r = (offset - columnIndex) * dRReconstruction
-            angle = (rowIndex - 1) * dAngleReconstruction
-            # angle = rowIndex * dAngleReconstruction
-            x = r * np.cos(angle)
-            y = r * np.sin(angle)
-            i = round(x + bScanNumOrigin/2) + 1
-            j = round(y + bScanNumOrigin/2) + 1
-            if j > bScanSumOrigin:
-                j = bScanSumOrigin
+        row, column = img.shape[-2:]
+        dR = bScanNumOrigin / bScanNum  # 1
+        dAngle = np.pi / bScanSum
+        dRReconstruction = dR / amp  # 1
+        dAngleReconstruction = dAngle / amp
+        offset = (bScanNum / 2) * amp  # 500
+        
+        for rowIndex in range(1,row+1):
+            for columnIndex in range(1, column+1):
+                r = (offset - columnIndex) * dRReconstruction
+                angle = (rowIndex - 1) * dAngleReconstruction
+                # angle = rowIndex * dAngleReconstruction
+                x = r * np.cos(angle)
+                y = r * np.sin(angle)
+                i = round(x + bScanNumOrigin/2) + 1
+                j = round(y + bScanNumOrigin/2) + 1
+                if j > bScanSumOrigin:
+                    j = bScanSumOrigin
 
-            if i > bScanNumOrigin:
-                i = bScanNumOrigin
-            if i < 1:
-                i = 1
-            if j < 1:
-                j = 1
-            if imgReconstruction[...,j-1,i-1] < img[..., rowIndex-1, columnIndex-1]:
-                imgReconstruction[...,j-1,i-1] = img[...,rowIndex-1, columnIndex-1]
-    imgReconstruction = (imgReconstruction - imgReconstruction.min()) / (imgReconstruction.max()-imgReconstruction.min()) * 255
-    imgReconstruction = imgReconstruction.astype('uint8')  
+                if i > bScanNumOrigin:
+                    i = bScanNumOrigin
+                if i < 1:
+                    i = 1
+                if j < 1:
+                    j = 1
+                if imgReconstruction[...,j-1,i-1] < img[..., rowIndex-1, columnIndex-1]:
+                    imgReconstruction[...,j-1,i-1] = img[...,rowIndex-1, columnIndex-1]
+        imgReconstruction = (imgReconstruction - imgReconstruction.min()) / (imgReconstruction.max()-imgReconstruction.min()) * 255
+        imgReconstruction = imgReconstruction.astype('uint8')  
 
-    return imgReconstruction
+        return imgReconstruction

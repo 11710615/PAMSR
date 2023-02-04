@@ -98,21 +98,25 @@ class RCAN(nn.Module):
             conv(n_feats, args.n_colors, kernel_size)]
 
         self.add_mean = common.MeanShift(args.rgb_range, sign=1)
-
+        
+        self.head_0 = nn.Conv2d(1,3,3,1,1)
         self.head = nn.Sequential(*modules_head)
         self.body = nn.Sequential(*modules_body)
         self.tail = nn.Sequential(*modules_tail)
-
+        self.tail_1 = nn.Conv2d(args.n_colors, 1, 3, 1, 1)
+        
     def forward(self, x):
-        x = self.sub_mean(x)
+        # x = self.sub_mean(x)
+        x = self.head_0(x)
         x = self.head(x)
 
         res = self.body(x)
         res += x
 
         x = self.tail(res)
-        x = self.add_mean(x)
-
+        # x = self.add_mean(x)
+        x = self.tail_1(x)
+        
         return x 
 
     def load_state_dict(self, state_dict, strict=False):

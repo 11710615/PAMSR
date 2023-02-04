@@ -195,7 +195,8 @@ def evaluation(sr, hr, rgb_range):
     # print('***111', sr.shape, hr.shape)
     # sr = sr.cpu().numpy().squeeze(0).squeeze(0)
     # hr = hr.cpu().numpy().squeeze(0).squeeze(0)
-    # print('***', sr.shape, hr.shape)
+    # print('***', sr.shape, hr.shape, np.max(sr), np.min(sr), np.max(hr), np.min(hr), rgb_range)
+    # k
     psnr_value = psnr(hr, sr,data_range=rgb_range)
     ssim_value = ssim(sr, hr, multichannel=False)
     

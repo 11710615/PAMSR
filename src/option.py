@@ -116,7 +116,7 @@ parser.add_argument('--reset', action='store_true',
                     help='reset the training')
 parser.add_argument('--test_every', type=int, default=1000,  #1000
                     help='do test per every N batches')
-parser.add_argument('--epochs', type=int, default=400,
+parser.add_argument('--epochs', type=int, default=200,
                     help='number of epochs to train')
 parser.add_argument('--batch_size', type=int, default=8,
                     help='input batch size for training')
@@ -134,6 +134,8 @@ parser.add_argument('--fold', type=int, default=0)
 
 parser.add_argument('--rec', action='store_true')
 parser.add_argument('--operator', type=str, default='sobel')
+parser.add_argument('--add_spmap', action='store_true', help='whether add a sample map at channel')
+parser.add_argument('--spmap_mode', type=str, default='nonuniform', help='nonuiform or uniform')
 
 # Optimization specifications
 # 1e-4 --> 5e-4

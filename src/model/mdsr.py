@@ -2,10 +2,10 @@ from model import common
 
 import torch.nn as nn
 
-url = {
-    'r16f64': 'https://cv.snu.ac.kr/research/EDSR/models/mdsr_baseline-a00cab12.pt',
-    'r80f64': 'https://cv.snu.ac.kr/research/EDSR/models/mdsr-4a78bedf.pt'
-}
+# url = {
+#     'r16f64': 'https://cv.snu.ac.kr/research/EDSR/models/mdsr_baseline-a00cab12.pt',
+#     'r80f64': 'https://cv.snu.ac.kr/research/EDSR/models/mdsr-4a78bedf.pt'
+# }
 
 def make_model(args, parent=False):
     return MDSR(args)
@@ -18,7 +18,7 @@ class MDSR(nn.Module):
         kernel_size = 3
         act = nn.ReLU(True)
         self.scale_idx = 0
-        self.url = url['r{}f{}'.format(n_resblocks, n_feats)]
+        # self.url = url['r{}f{}'.format(n_resblocks, n_feats)]
         self.sub_mean = common.MeanShift(args.rgb_range)
         self.add_mean = common.MeanShift(args.rgb_range, sign=1)
 
@@ -43,13 +43,16 @@ class MDSR(nn.Module):
         ])
 
         m_tail = [conv(n_feats, args.n_colors, kernel_size)]
-
+        
+        self.head_0 = nn.Conv2d(1,3,3,1,1)
         self.head = nn.Sequential(*m_head)
         self.body = nn.Sequential(*m_body)
         self.tail = nn.Sequential(*m_tail)
+        self.tail_1 = nn.Conv2d(args.n_colors, 1, 3, 1, 1)
 
     def forward(self, x):
-        x = self.sub_mean(x)
+        # x = self.sub_mean(x)
+        x = self.head_0(x)
         x = self.head(x)
         x = self.pre_process[self.scale_idx](x)
 
@@ -58,7 +61,8 @@ class MDSR(nn.Module):
 
         x = self.upsample[self.scale_idx](res)
         x = self.tail(x)
-        x = self.add_mean(x)
+        x = self.tail_1(x)
+        # x = self.add_mean(x)
 
         return x
 

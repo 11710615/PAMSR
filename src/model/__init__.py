@@ -115,7 +115,7 @@ class Model(nn.Module):
         if load_from:
             self.model.load_state_dict(load_from, strict=False)
 
-    def forward_chop(self, *args, shave=10, min_size=1600000):
+    def forward_chop(self, *args, shave=32, min_size=1600000):
         scale = 1 if self.input_large else self.scale[self.idx_scale]
         # n_GPUs = min(self.n_GPUs, 4)
         n_GPUs = min(len(self.gpu_ids), 4)
@@ -133,8 +133,8 @@ class Model(nn.Module):
             a[..., bottom, right]
         ]) for a in args]
         print(len(args), x_chops[0].shape, len(x_chops))
-        for a in args:
-            print(a.shape,'+++++')
+        # for a in args:
+        #     print(a.shape,'+++++')
         y_chops = []
         if h * w < 4 * min_size:
             for i in range(0, 4, n_GPUs):
@@ -159,9 +159,9 @@ class Model(nn.Module):
                     y_chops = [[_y] for _y in y]
                 else:
                     for y_chop, _y in zip(y_chops, y): y_chop.append(_y)
-
-        h *= scale
-        w *= scale
+        if self.args.model != 'fd_unet':
+            h *= scale
+            w *= scale
         top = slice(0, h//2)
         bottom = slice(h - h//2, h)
         bottom_r = slice(h//2 - h, None)
@@ -236,7 +236,7 @@ class Model(nn.Module):
         #     img_lq = img_lq.permute(2,0,1,3,4).squeeze(0)
         # batch, burst, c, h, w = img_lq.size()
         batch = img_lq.shape[0]
-        c, h, w = img_lq.shape[-3:]
+        _, h, w = img_lq.shape[-3:]
         tile = min(tile, h, w)
         assert tile % window_size == 0, "tile size should be a multiple of window_size"
         tile_overlap = self.args.tile_overlap  # overlap for tile  56
@@ -244,7 +244,7 @@ class Model(nn.Module):
         stride = tile - tile_overlap
         h_idx_list = list(range(0, h-tile, stride)) + [h-tile]
         w_idx_list = list(range(0, w-tile, stride)) + [w-tile]
-        E = torch.zeros(batch, c, h*sf, w*sf).type_as(img_lq)
+        E = torch.zeros(batch, 1, h*sf, w*sf).type_as(img_lq)
         W = torch.zeros_like(E)
 
         for h_idx in h_idx_list:

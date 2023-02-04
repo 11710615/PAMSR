@@ -89,8 +89,12 @@ class RDN(nn.Module):
             ])
         else:
             raise ValueError("scale must be 2 or 3 or 4.")
-
+        
+        self.head_0 = nn.Conv2d(1,3,3,1,1)
+        self.tail_1 = nn.Conv2d(args.n_colors, 1, 3, 1, 1)
+        
     def forward(self, x):
+        x = self.head_0(x)
         f__1 = self.SFENet1(x)
         x  = self.SFENet2(f__1)
 
@@ -101,5 +105,33 @@ class RDN(nn.Module):
 
         x = self.GFF(torch.cat(RDBs_out,1))
         x += f__1
+        x = self.UPNet(x)
 
-        return self.UPNet(x)
+        x = self.tail_1(x)
+        return x
+
+    def load_state_dict(self, state_dict, strict=False):
+        own_state = self.state_dict()
+        for name, param in state_dict.items():
+            if name in own_state:
+                if isinstance(param, nn.Parameter):
+                    param = param.data
+                try:
+                    own_state[name].copy_(param)
+                except Exception:
+                    if name.find('tail') >= 0:
+                        print('Replace pre-trained upsampler to new one...')
+                    else:
+                        raise RuntimeError('While copying the parameter named {}, '
+                                           'whose dimensions in the model are {} and '
+                                           'whose dimensions in the checkpoint are {}.'
+                                           .format(name, own_state[name].size(), param.size()))
+            elif strict:
+                if name.find('tail') == -1:
+                    raise KeyError('unexpected key "{}" in state_dict'
+                                   .format(name))
+
+        if strict:
+            missing = set(own_state.keys()) - set(state_dict.keys())
+            if len(missing) > 0:
+                raise KeyError('missing keys in state_dict: "{}"'.format(missing))

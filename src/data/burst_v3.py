@@ -51,7 +51,8 @@ class BurstSRDataset(torch.utils.data.Dataset):
 
         self.substract_black_level = True
         self.white_balance = False
-
+        self.add_spmap = args.add_spmap
+        
         self.burst_list = self._get_burst_list(data_id)
         if self.split == 'train':
 
@@ -141,7 +142,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
         # ids = [0, ] + ids
         return ids
     
-    def _get_crop(self, frames, gt, patch_size=(64,64), scale=2, center_crop=False, patch_select='random'):
+    def _get_crop(self, frames, gt, patch_size=(64,64), scale=2, center_crop=False, patch_select='random', add_spmap=False):
         ih, iw = frames[0].shape[:2]  # 256,
         p = scale
         if isinstance(patch_size, int):
@@ -228,7 +229,14 @@ class BurstSRDataset(torch.utils.data.Dataset):
         ]
         # cord information
         cord = [ty, tx, ty + tp[0], tx + tp[1]]
-        return ret, cord  # ret[0]: burst list, ret[1]: gt
+        if add_spmap:
+            sp_map = generate_sample_map(ih,iw, mode=self.args.spmap_mode)
+            sp_map = torch.from_numpy(sp_map)
+            sp_map = sp_map.float()
+            sp_map = sp_map[...,iy:iy + ip[0], ix:ix + ip[1]]
+            return ret, cord, sp_map  # ret[0]: burst list, ret[1]: gt
+        else:
+            return ret, cord
     
     def _augment(self, frames, gt, hflip=True, rot=True): 
         hflip = hflip and random.random() < 0.5
@@ -267,26 +275,32 @@ class BurstSRDataset(torch.utils.data.Dataset):
 
         # Extract crop if needed
         if self.split == 'train':
-            ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.patch_size, scale=self.args.scale[0], patch_select=self.args.patch_select)
+            if self.add_spmap:
+                ret, patch_cord, sp_map = self._get_crop(frames, gt, patch_size=self.args.patch_size, scale=self.args.scale[0], patch_select=self.args.patch_select, add_spmap=self.add_spmap)
+            else:
+                ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.patch_size, scale=self.args.scale[0], patch_select=self.args.patch_select, add_spmap=self.add_spmap)
             burst_list, gt = ret
             # print('**', gt.shape)
             if not self.args.no_augment:
                 burst_list, gt = self._augment(burst_list, gt)
         else:
             # burst_list, gt = self._get_crop(frames, gt, patch_size=512//self.args.scale[0], scale=self.args.scale[0], center_crop=True)
- 
-            ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.test_patch_size, scale=self.args.scale[0], center_crop=True)
+            if self.add_spmap:
+                ret, patch_cord, sp_map = self._get_crop(frames, gt, patch_size=self.args.test_patch_size, scale=self.args.scale[0], center_crop=True, add_spmap=self.add_spmap)
+            else: 
+                ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.test_patch_size, scale=self.args.scale[0], center_crop=True, add_spmap=self.add_spmap)
             burst_list, gt = ret
         patch_cord.append(start_row)
+        
         # unsqueence
         burst_list = [img.unsqueeze(0) for img in burst_list]
         gt = gt.unsqueeze(0).float()
         burst = torch.stack(burst_list, dim=0).float()  # [5,1,h,w]，封装后，添加batch
         if self.burst_size == 1:
             burst = burst.squeeze(0)  # [1,1,h,w]->[1,h,w]
-        
+        if self.add_spmap:
+            burst = torch.cat([burst, sp_map], dim=0)
         # print('start_row, ***', patch_cord[4], gt.shape, burst.shape)
-
         return burst, gt, meta_info, patch_cord  # dict
 
 def image_entrop_gray(img):  # input:[0,1]
@@ -336,3 +350,17 @@ def split_patch(img, patch_num=[4,4]):
         for j in range(n_patch_w):
             patch_list.append(img[...,i*patch_size_h:(i+1)*patch_size_h,j*patch_size_w:(j+1)*patch_size_w])
     return patch_list
+
+def generate_sample_map(h,w, mode='uniform'):
+    if mode == 'uniform':
+        sample_map = np.ones([1,h,w])
+    elif mode == 'nonuniform':
+        sample_map_row = np.linspace(0,1,num=w//2,endpoint=True)
+        if w % 2 == 0:
+            out = np.concatenate([sample_map_row, sample_map_row[::-1]], axis=0)
+        else:
+            out = np.concatenate([sample_map_row, sample_map_row[::-1], np.zeros(w%2)], axis=0)
+        sample_map = np.expand_dims(out, 0).repeat(h ,axis=0)
+        sample_map = np.expand_dims(sample_map,0)
+        # sample_map = np.expand_dims(sample_map,0)
+    return sample_map

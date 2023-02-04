@@ -153,7 +153,7 @@ class HAN(nn.Module):
         self.sub_mean = common.MeanShift(args.rgb_range, rgb_mean, rgb_std)
         
         # define head module
-        modules_head = [conv(args.n_colors, n_feats, kernel_size)]
+        modules_head = [conv(3, n_feats, kernel_size)]
 
         # define body module
         modules_body = [
@@ -169,7 +169,9 @@ class HAN(nn.Module):
             conv(n_feats, args.n_colors, kernel_size)]
 
         self.add_mean = common.MeanShift(args.rgb_range, rgb_mean, rgb_std, 1)
-
+        
+        self.head_0 = nn.Conv2d(1,3,3,1,1)
+        
         self.head = nn.Sequential(*modules_head)
         self.body = nn.Sequential(*modules_body)
         self.csa = CSAM_Module(n_feats)
@@ -178,12 +180,13 @@ class HAN(nn.Module):
         self.last = nn.Conv2d(n_feats*2, n_feats, 3, 1, 1)
         self.tail = nn.Sequential(*modules_tail)
         self.input_nc = args.n_colors
-
+        self.tail_1 = nn.Conv2d(args.n_colors, 1, 3, 1, 1)
     def forward(self, x):
-        if self.input_nc == 1:
-            pass
-        else:
-            x = self.sub_mean(x)
+        # if self.input_nc == 1:
+        #     pass
+        # else:
+        #     x = self.sub_mean(x)
+        x = self.head_0(x)
         x = self.head(x)
         res = x
         #pdb.set_trace()
@@ -209,10 +212,11 @@ class HAN(nn.Module):
         #res = self.csa(res)
 
         x = self.tail(res)
-        if self.input_nc == 1:
-            pass
-        else:
-            x = self.add_mean(x)
+        x = self.tail_1(x)
+        # if self.input_nc == 1:
+        #     pass
+        # else:
+        #     x = self.add_mean(x)
 
         return x 
 

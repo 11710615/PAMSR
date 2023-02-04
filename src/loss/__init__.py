@@ -340,6 +340,9 @@ class Loss(nn.modules.loss._Loss):
             elif loss_type == 'rec':  # rec_gradloss
                 module = import_module('loss.rec')
                 loss_function = getattr(module, 'rec')(whether_rec=True)
+            elif loss_type == 'rec_l1':  # rec_gradloss
+                module = import_module('loss.rec_l1')
+                loss_function = getattr(module, 'rec')(whether_rec=True)
             elif loss_type == 'gradloss':
                 module = import_module('loss.gradloss')
                 loss_function = getattr(module, 'gradloss')(whether_rec=False)

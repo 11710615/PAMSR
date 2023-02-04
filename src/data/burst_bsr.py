@@ -109,15 +109,12 @@ class BurstSRDataset(torch.utils.data.Dataset):
         lr_image = torch.from_numpy(lr_image)
         return lr_image
 
-    def _get_gt_image(self, burst_id, start_row):
+    def _get_gt_image(self, burst_id):
         if self.split != 'val_divided':
             gt_img = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/1_X1_X1.png',0)
             # median filter to remove noise
             # gt_img = cv2.medianBlur(gt_img, ksize=3)
             gt_img = cv2.copyMakeBorder(gt_img, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
-            if self.downsample_gt:
-                h,_ = gt_img.shape[-2:]
-                gt_img = gt_img[...,range(start_row,h,2),:]
         else:
             gt_img = cv2.imread(self.root + '/' + self.burst_list[burst_id], 0)
             # gt_img = cv2.medianBlur(gt_img, ksize=3)
@@ -128,13 +125,13 @@ class BurstSRDataset(torch.utils.data.Dataset):
         return gt_img
 
     def get_burst(self, burst_id, im_ids, info=None):
-        start_row = np.random.randint(2)  # 0/1
-        frames = [self._get_lr_image(burst_id, i, start_row) for i in im_ids]
-        gt = self._get_gt_image(burst_id, start_row)
+        # start_row = np.random.randint(2)  # 0/1
+        frames = [self._get_lr_image(burst_id, i) for i in im_ids]
+        gt = self._get_gt_image(burst_id)
         if info is None:
             info = self.get_burst_info(burst_id)
 
-        return frames, gt, info, start_row
+        return frames, gt, info
 
     def _sample_images(self):  # keep ids=0 as the base frame
         # burst_size_max = self.args.burst_size_max
@@ -263,7 +260,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
         im_ids = self._sample_images()
 
         # Read the burst images along with HR ground truth
-        frames, gt, meta_info, start_row = self.get_burst(index, im_ids)
+        frames, gt, meta_info = self.get_burst(index, im_ids)
 
         # print('***', frames[0].shape, gt.shape)
 
@@ -279,7 +276,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
  
             ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.test_patch_size, scale=self.args.scale[0], center_crop=True)
             burst_list, gt = ret
-        patch_cord.append(start_row)
+        # patch_cord.append(start_row)
         # unsqueence
         burst_list = [img.unsqueeze(0) for img in burst_list]
         gt = gt.unsqueeze(0).float()
