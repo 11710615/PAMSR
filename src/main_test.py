@@ -5,10 +5,7 @@ import data
 import model
 import loss
 from option import args
-from trainer import Trainer
-from trainer_ema import Trainer_ema
-from trainer_burst import Trainer_burst
-from trainer_burst_ema import Trainer_burst_ema
+from trainer_test import Trainer_burst_ema
 from torch.utils.data.dataloader import DataLoader
 import warnings
 from sklearn.model_selection import KFold
@@ -21,7 +18,7 @@ torch.manual_seed(args.seed)
 # checkpoint = utility.checkpoint(args, fold)
 
 if args.data_train[0] in ['real_lr', 'unreg_real_lr']:
-    data_list = os.listdir(os.path.join(args.dir_data, args.data_train[0], 'real_hr'))
+    data_list = os.listdir(os.path.join(args.dir_data, args.data_train[0], 'test'))
 else:
     data_list = os.listdir(os.path.join(args.dir_data, args.data_train[0]))
 

@@ -130,7 +130,7 @@ parser.add_argument('--gan_k', type=int, default=1,
                     help='k value for adversarial loss')
 parser.add_argument('--use ema', action='store_true',
                     help='whether use ema')
-parser.add_argument('--fold', type=int, default=0)
+parser.add_argument('--fold', type=str, default='0')
 
 parser.add_argument('--rec', action='store_true')
 parser.add_argument('--operator', type=str, default='sobel')
@@ -197,6 +197,13 @@ if args.test_only:
 # set gpu ids
 str_ids = args.gpu_ids.split(',')
 args.gpu_ids = []
+
+str_folds = args.fold.split(',')
+args.fold = []
+for str_fold in str_folds:
+    fold = int(str_fold)
+    args.fold.append(fold)
+    
 for str_id in str_ids:
     id = int(str_id)
     if id >= 0:

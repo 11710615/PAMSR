@@ -23,14 +23,28 @@ torch.manual_seed(args.seed)
 data_list = os.listdir(os.path.join(args.dir_data, args.data_train[0]))
 KF = KFold(n_splits=5, shuffle=True, random_state=55)
 fold_best = []
+fold_for_train = [2,3,4]
 def main():
     global model
     for fold, data_id in enumerate(KF.split(data_list)):
         print(fold)
-        if not args.test_only and fold in [1,2,3,4]:  # flag to select fold for training
+        if not args.test_only and fold in fold_for_train:  # flag to select fold for training
             continue
-        if args.test_only and fold != args.fold:  # flag to select fold for testing
+        elif not args.test_only and not fold in fold_for_train:
+            if int(args.scale[0])==2:
+                args.pre_train = ''
+            else:
+                pre_train = '../experiment/'+ args.save.replace('_x{}'.format(int(args.scale[0])), '_x2') + '/{}'+'/model/model_best.pt'
+                args.pre_train = pre_train.format(fold)
+            print(args.pre_train)
+        elif args.test_only and not fold in args.fold:  # flag to select fold for testing
+            # print(not fold in args.fold, fold, args.fold)
             continue
+        else:
+            pre_train = '../experiment/'+ args.save + '/{}'+'/model/model_best.pt'
+            args.pre_train = pre_train.format(fold)
+            args.pre_train = ''
+
         checkpoint = utility.checkpoint(args, fold)
         if checkpoint.ok:
             loader = data.Data(args, data_id)

@@ -159,21 +159,14 @@ class Trainer_burst_ema():
                         sr = self.model(burst, idx_scale)
                     sr, hr = self.center_crop(sr, hr)
                     sr = utility.quantize(sr, self.args.rgb_range)
-
+                    hr = utility.quantize(hr, self.args.rgb_range)
                     save_list = [sr]
-                    self.ckp.log[-1, idx_data, idx_scale] += utility.calc_psnr(
-                        sr, hr, scale, self.args.rgb_range, dataset=d
-                    )
+                    # self.ckp.log[-1, idx_data, idx_scale] += utility.calc_psnr(
+                    #     sr, hr, scale, self.args.rgb_range, dataset=d
+                    # )
+                    self.ckp.log[-1, idx_data, idx_scale] += 0
                     # print('**',utility.calc_psnr(sr, hr, scale, self.args.rgb_range, dataset=d))
-                    # print('***111', utility.evaluation(sr.cpu().numpy().squeeze(0).squeeze(0), hr.cpu().numpy().squeeze(0).squeeze(0), self.args.rgb_range)[0])
-                    # k
-                    if self.args.test_only:
-                        psnr_, ssim_ = utility.evaluation(sr.cpu().numpy().squeeze(0).squeeze(0), hr.cpu().numpy().squeeze(0).squeeze(0), self.args.rgb_range)
-                        # print(psnr_, ssim_, 'eva***')
-                        sr_rec = self.rec_img_test(sr)
-                        hr_rec = self.rec_img_test(hr)
-                        psnr_rec, ssim_rec = utility.evaluation(sr_rec, hr_rec, 255)
-                        eval_value += np.array([psnr_, ssim_, psnr_rec, ssim_rec])
+                    # print('***111', utility.evaluation(sr.cpu().numpy().squeeze(0).squeeze(0), hr.cpu().numpy().squeeze(0).squeeze(0), self.args.rgb_range)[0]
 
                     if self.args.save_gt:
                         if len(burst.shape) == 5:
@@ -190,17 +183,13 @@ class Trainer_burst_ema():
                 best = self.ckp.log.max(0)
                 if self.args.test_only:
                     self.ckp.write_log(
-                        '[{} x{} Fold {}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})\nSSIM: {:.3f}\t Rec_PSNR: {:.3f} Rec_SSIM: {:.3f}, *{:.3f}'.format(
+                        '[{} x{} Fold {}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})'.format(
                             d.dataset.name,
                             scale,
                             self.fold,
                             self.ckp.log[-1, idx_data, idx_scale],
                             best[0][idx_data, idx_scale],
                             best[1][idx_data, idx_scale] + 1,
-                            eval_value[1],
-                            eval_value[2],
-                            eval_value[3],
-                            eval_value[0]
                         )
                     )
                 else:
@@ -257,7 +246,7 @@ class Trainer_burst_ema():
 
     def center_crop(self, sr, hr):
         print(sr.shape, hr.shape, '***')
-        assert(sr.shape==hr.shape)
+        # assert(sr.shape==hr.shape)
         h, w = sr.shape[-2:]
         h_crop = int(h/100)*100
         w_crop = int(w/100)*100

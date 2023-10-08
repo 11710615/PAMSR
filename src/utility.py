@@ -139,6 +139,7 @@ class checkpoint():
                 if not queue.empty():
                     filename, tensor = queue.get()
                     if filename is None: break
+                    print(tensor.shape,'********')
                     imageio.imwrite(filename, tensor.numpy())
         
         self.process = [
@@ -167,7 +168,7 @@ class checkpoint():
                 # print('output_shape',v[0].shape)
                 normalized = v[0].mul(255 / self.args.rgb_range)  #
                 tensor_cpu = normalized.byte().permute(1, 2, 0).cpu()
-                self.queue.put(('{}{}.png'.format(filename, p), tensor_cpu))
+                self.queue.put(('{}{}.png'.format(filename, p), tensor_cpu[:,:,0]))
 
 def quantize(img, rgb_range):
     pixel_range = 255 / rgb_range
@@ -197,8 +198,8 @@ def evaluation(sr, hr, rgb_range):
     # hr = hr.cpu().numpy().squeeze(0).squeeze(0)
     # print('***', sr.shape, hr.shape, np.max(sr), np.min(sr), np.max(hr), np.min(hr), rgb_range)
     # k
-    psnr_value = psnr(hr, sr,data_range=rgb_range)
-    ssim_value = ssim(sr, hr, multichannel=False)
+    psnr_value = psnr(hr, sr, data_range=rgb_range)
+    ssim_value = ssim(sr, hr, multichannel=False, data_range=rgb_range)
     
     return psnr_value, ssim_value
 
