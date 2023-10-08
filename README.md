@@ -1,13 +1,13 @@
+This repository is an official PyTorch implementation of the paper **"Super-Resolution on Rotationally Scanned Photoacoustic Microscopy Images Incorporating Scanning Prior"**.
 
 ## Dependencies
-* Python 3.6
-* PyTorch >= 1.0.0
+* Python 3.8.5
+* torch = 1.12.0
 * numpy
 * skimage
-* **imageio**
 * matplotlib
 * tqdm
-* cv2 >= 3.xx (Only if you want to use video input/output)
+* opencv-python
 
 ## Code
 ```bash
