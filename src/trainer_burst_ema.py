@@ -169,9 +169,10 @@ class Trainer_burst_ema():
                     # k
                     if self.args.test_only:
                         psnr_, ssim_ = utility.evaluation(sr.cpu().numpy().squeeze(0).squeeze(0), hr.cpu().numpy().squeeze(0).squeeze(0), self.args.rgb_range)
-                        # print(psnr_, ssim_, 'eva***')
-                        sr_rec = self.rec_img_test(sr)
-                        hr_rec = self.rec_img_test(hr)
+                        # sr_rec = self.rec_img_test(sr)
+                        # hr_rec = self.rec_img_test(hr)
+                        sr_rec = sr.cpu().numpy().squeeze(0).squeeze(0)
+                        hr_rec = hr.cpu().numpy().squeeze(0).squeeze(0)
                         psnr_rec, ssim_rec = utility.evaluation(sr_rec, hr_rec, 255)
                         eval_value += np.array([psnr_, ssim_, psnr_rec, ssim_rec])
 
@@ -256,7 +257,7 @@ class Trainer_burst_ema():
             return epoch >= self.args.epochs
 
     def center_crop(self, sr, hr):
-        # print(sr.shape, hr.shape, '***')
+        print(sr.shape, hr.shape, '*****************')
         assert(sr.shape==hr.shape)
         h, w = sr.shape[-2:]
         h_crop = int(h/100)*100
@@ -292,7 +293,7 @@ class Trainer_burst_ema():
         return sr_rec, hr_rec
 
     def rec_img_test(self, img):
-        assert(img.shape[-2:] == (1000, 1000))
+        # assert(img.shape[-2:] == (1000, 1000))
         # img = img_pad[...,12:1012, 12:1012]
         # map_idx = np.zeros_like(img)
         img = img.cpu().numpy().squeeze(0).squeeze(0)

@@ -160,7 +160,6 @@ class BurstSRDataset(torch.utils.data.Dataset):
         p = scale
         if isinstance(patch_size, int):
             patch_size = [patch_size, patch_size]
-            
         if self.args.model == 'fd_unet':
             tp = [num for num in patch_size]
             ip = [num for num in tp]  # 64
@@ -304,9 +303,6 @@ class BurstSRDataset(torch.utils.data.Dataset):
         burst = torch.stack(burst_list, dim=0).float()  # [5,1,h,w]，封装后，添加batch
         if self.burst_size == 1:
             burst = burst.squeeze(0)  # [1,1,h,w]->[1,h,w]
-        
-        # print('start_row, ***', patch_cord[4], gt.shape, burst.shape)
-
         return burst, gt, meta_info, patch_cord  # dict
 
 def image_entrop_gray(img):  # input:[0,1]

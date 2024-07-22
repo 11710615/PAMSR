@@ -1356,7 +1356,7 @@ def set_template(args):
 ##################################################################################################    
     if args.template == 'proposed_lly_x2':
         args.model = 'Swinir'
-        args.patch_size = (16, 64)
+        args.patch_size = (64, 16)
         args.num_features = 180
         args.burst_size = 1
         args.tile = True
@@ -1369,7 +1369,7 @@ def set_template(args):
         else:
             flag = args.patch_select + '_'
         args.no_augment = True
-        args.test_patch_size = (250 // int(args.scale), 1000 // int(args.scale))
+        args.test_patch_size = (1000 // int(args.scale), 250 // int(args.scale))
         if args.rec:
             flag_rec = 'rec'
         else:
@@ -1378,4 +1378,6 @@ def set_template(args):
         args.save = 'syn_x{}/'.format(args.scale) + flag+'proposed_lly_x2_' + args.loss + '_' + flag_rec + '_' + args.data_train
         # args.pre_train = '/mnt/pank/SPSR/experiment9/*grad_window_proposed_x2_1*RL1+0.5*rec_norec_burst_v3/0/model/model_best.pt'
         # args.pre_train = '/mnt/pank/SPSR/experiment/ablation/a2_grad_window_proposed_x2_1*RL1+0.5*rec_norec_test_unreg_mid/0/model/model_best.pt'
+        args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best.pt'
 ##################################################################################################
+
