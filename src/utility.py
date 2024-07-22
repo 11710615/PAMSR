@@ -158,7 +158,7 @@ class checkpoint():
         if self.args.save_results:
             filename = self.get_path(
                 'results-{}'.format(self.args.model),
-                '{}_x{}_'.format(filename, scale)
+                '{}_x{}_'.format(filename[:filename.index(".")], scale)
             )
             if self.args.save_gm:
                 postfix = ('SR','SR_GM','HR_GM','Rec_GM')

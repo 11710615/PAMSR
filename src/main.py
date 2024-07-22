@@ -23,7 +23,7 @@ torch.manual_seed(args.seed)
 data_list = os.listdir(os.path.join(args.dir_data, args.data_train[0]))
 KF = KFold(n_splits=5, shuffle=True, random_state=55)
 fold_best = []
-fold_for_train = [2,3,4]
+fold_for_train = [1,2,3,4] # expert
 def main():
     global model
     for fold, data_id in enumerate(KF.split(data_list)):
@@ -43,7 +43,7 @@ def main():
         else:
             pre_train = '../experiment/'+ args.save + '/{}'+'/model/model_best.pt'
             args.pre_train = pre_train.format(fold)
-            args.pre_train = ''
+            # args.pre_train = ''
 
         checkpoint = utility.checkpoint(args, fold)
         if checkpoint.ok:

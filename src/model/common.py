@@ -116,7 +116,6 @@ class Get_gradient(nn.Module):
         x = torch.cat(x_list, dim = 1)
         return x
 
-
 class grad_info(nn.Module):
     def __init__(self):
         super(grad_info, self).__init__()

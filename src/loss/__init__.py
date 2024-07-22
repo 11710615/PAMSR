@@ -17,6 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from model import common
 from kornia.losses import ssim_loss as ssim_m
+from kornia.losses import psnr_loss as psnr_m
 import wandb
 
 class Gradient_L1(nn.Module):
@@ -231,7 +232,59 @@ class RL1(nn.Module):
             sr = sr
         out = self.l1(sr,hr)
         return out
+
+class rmse(nn.Module):
+    def __init__(self):
+        super(rmse, self).__init__()
+        self.mse = nn.MSELoss()
+    def forward(self,sr,hr): # sr: tuple
+        if isinstance(sr, list):
+            sr = sr[0]
+        elif isinstance(sr, tuple):
+            sr = sr[0]
+        else:
+            sr = sr
+        sr = normalize(sr)
+        hr = normalize(hr)
+        out = self.mse(sr,hr)
+        return out
     
+def normalize(tensor):
+    # Normalizes Tensor from 0-1
+    return torch.divide(torch.subtract(tensor, torch.min(tensor)), 
+                                 torch.subtract((torch.max(tensor)+1e-6), torch.min(tensor)))
+class fmse(nn.Module):
+    def __init__(self):
+        super(fmse, self).__init__()
+        self.mse = nn.MSELoss()
+    def forward(self,sr,hr): # sr: tuple
+        if isinstance(sr, list):
+            sr = sr[0]
+        elif isinstance(sr, tuple):
+            sr = sr[0]
+        else:
+            sr = sr
+        sr = normalize(sr)
+        hr = normalize(hr)  
+        out = self.mse(torch.abs(torch.fft.fft2(sr)), torch.abs(torch.fft.fft2(hr)))
+        return out
+    
+class quality(nn.Module):
+    def __init__(self):
+        super(quality, self).__init__()
+    def forward(self,sr,hr): # sr: tuple
+        if isinstance(sr, list):
+            sr = sr[0]
+        elif isinstance(sr, tuple):
+            sr = sr[0]
+        else:
+            sr = sr
+        sr = normalize(sr)
+        hr = normalize(hr)
+        ssim_loss = ssim_m(sr, hr, window_size=5) * 2
+        psnr_loss = (psnr_m(sr, hr, max_val=1) + 40) / 275
+        return ssim_loss+psnr_loss
+
 # ssim loss before rec
 class ssimloss(nn.Module):
     def __init__(self):
@@ -266,7 +319,15 @@ class L1RG(nn.Module):
         hr_gm = self.gm(hr)
         return self.l1(rec_gm,hr_gm)
 
-
+# class SPMapWL1(nn.Module):
+#     def __init__(self):
+#         super(SPMapWL1, self).__init__()
+#         self.L1 = nn.L1Loss()
+        
+#     def forward(self, x, cord):
+#         spmap = cord[-1]
+        
+            
 # torch.autograd.set_detect_anomaly(True)
 class Loss(nn.modules.loss._Loss):
     def __init__(self, args, ckp):
@@ -281,6 +342,12 @@ class Loss(nn.modules.loss._Loss):
             weight, loss_type = loss.split('*')
             if loss_type == 'MSE':
                 loss_function = nn.MSELoss()
+            if loss_type == 'rmse':
+                loss_function = rmse()
+            if loss_type == 'fmse':
+                loss_function = fmse()
+            if loss_type == 'quality':
+                loss_function = quality()
             elif loss_type == 'L1':
                 loss_function = nn.L1Loss()
             elif loss_type == 'RL1':
@@ -349,6 +416,9 @@ class Loss(nn.modules.loss._Loss):
             elif loss_type == 'GradientLoss':
                 module = import_module('loss.GradientLoss')
                 loss_function = getattr(module, 'GradientLoss')(rec=args.rec, operator=args.operator)
+            elif loss_type == 'spwl1':
+                module = import_module('loss.spwl1')
+                loss_function = getattr(module, 'spwl1')()
             self.loss.append({
                 'type': loss_type,
                 'weight': float(weight),

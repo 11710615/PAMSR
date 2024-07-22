@@ -33,7 +33,6 @@ class Model(nn.Module):
         self.model = module.make_model(args).to(self.device)
         if args.precision == 'half':
             self.model.half()
-
         self.load(
             ckp.get_path('model'),
             pre_train=args.pre_train,
@@ -105,6 +104,7 @@ class Model(nn.Module):
                 )
             elif pre_train:
                 print('Load the model from {}'.format(pre_train))
+                # print(pre_train,'*************')
                 load_from = torch.load(pre_train, **kwargs)
         else:
             load_from = torch.load(
@@ -115,7 +115,7 @@ class Model(nn.Module):
         if load_from:
             self.model.load_state_dict(load_from, strict=False)
 
-    def forward_chop(self, *args, shave=32, min_size=1600000):
+    def forward_chop(self, *args, shave=32, min_size=16000):
         scale = 1 if self.input_large else self.scale[self.idx_scale]
         # n_GPUs = min(self.n_GPUs, 4)
         n_GPUs = min(len(self.gpu_ids), 4)
@@ -126,13 +126,22 @@ class Model(nn.Module):
         bottom = slice(h - h//2 - shave, h)
         left = slice(0, w//2 + shave)
         right = slice(w - w//2 - shave, w)
-        x_chops = [torch.cat([
-            a[..., top, left],
-            a[..., top, right],
-            a[..., bottom, left],
-            a[..., bottom, right]
-        ]) for a in args]
-        print(len(args), x_chops[0].shape, len(x_chops))
+        # print(args[0].shape,'*')
+        if len(args[0].shape) == 3:
+            x_chops = [torch.cat([
+                a[..., top, left].unsqueeze(1),
+                a[..., top, right].unsqueeze(1),
+                a[..., bottom, left].unsqueeze(1),
+                a[..., bottom, right].unsqueeze(1)
+            ]) for a in args]
+        else:
+            x_chops = [torch.cat([
+                a[..., top, left],
+                a[..., top, right],
+                a[..., bottom, left],
+                a[..., bottom, right]
+            ]) for a in args]
+        # print(len(args), x_chops[0].shape, len(x_chops))
         # for a in args:
         #     print(a.shape,'+++++')
         y_chops = []
@@ -149,10 +158,6 @@ class Model(nn.Module):
                         y_chop.extend(_y.chunk(n_GPUs, dim=0))
         else:
             for p in zip(*x_chops):
-                # p_temp = p[0]
-                # p_temp = p_temp.unsqueeze(0)
-                # print(p_temp.shape,'----')
-                # out = (p_temp)
                 y = self.forward_chop(*p, shave=shave, min_size=min_size)
                 if not isinstance(y, list): y = [y]
                 if not y_chops:
@@ -246,13 +251,11 @@ class Model(nn.Module):
         w_idx_list = list(range(0, w-tile, stride)) + [w-tile]
         E = torch.zeros(batch, 1, h*sf, w*sf).type_as(img_lq)
         W = torch.zeros_like(E)
-
         for h_idx in h_idx_list:
             for w_idx in w_idx_list:
                 in_patch = img_lq[..., h_idx:h_idx+tile, w_idx:w_idx+tile]
                 out_patch = self.model(in_patch)
                 out_patch_mask = torch.ones_like(out_patch)
-
                 E[..., h_idx*sf:(h_idx+tile)*sf, w_idx*sf:(w_idx+tile)*sf].add_(out_patch)
                 W[..., h_idx*sf:(h_idx+tile)*sf, w_idx*sf:(w_idx+tile)*sf].add_(out_patch_mask)
         output = E.div_(W)

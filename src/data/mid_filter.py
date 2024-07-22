@@ -27,6 +27,7 @@ def padding_zero(img, scale=2):
         for j in range(1,scale):
             img_down[..., :, range(j, w, scale)] = 0
     return img_down
+
 def padding_zero_lr(lr,scale=2):
     h,w=lr.shape
     out = np.zeros([h*scale,w*scale])
@@ -71,7 +72,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
         self.burst_list = self._get_burst_list(data_id)
         if self.split == 'train':
 
-            n_patch = args.batch_size * args.test_every
+            n_patch = 1 * args.test_every
             n_image = len(self.burst_list)
             if n_image == 0:
                 self.repeat = 0

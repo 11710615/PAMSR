@@ -67,7 +67,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
         self.burst_list = self._get_burst_list(data_id)
         if self.split == 'train':
 
-            n_patch = args.batch_size * args.test_every
+            n_patch = 1 * args.test_every
             n_image = len(self.burst_list)
             if n_image == 0:
                 self.repeat = 0
@@ -77,10 +77,10 @@ class BurstSRDataset(torch.utils.data.Dataset):
     def _get_burst_list(self, data_id):
         burst_list = sorted(os.listdir(self.root))  # 'busrst_data/train'
         #print(burst_list)
-        # if self.split == 'train':
-        #     data_id = data_id[0]
-        # else:
-        #     data_id = data_id[1]
+        if self.split == 'train':
+            data_id = data_id[0]
+        else:
+            data_id = data_id[1]
         # print(data_id,'**')
         out = [burst_list[i] for i in data_id]
         # print('out**', out)

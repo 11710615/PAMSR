@@ -175,7 +175,7 @@ parser.add_argument('--resume', type=int, default=0,
                     help='resume from specific checkpoint')
 parser.add_argument('--save_models', action='store_true',
                     help='save all intermediate models')  # model- __init__.py
-parser.add_argument('--print_every', type=int, default=100,
+parser.add_argument('--print_every', type=int, default=50,
                     help='how many batches to wait before logging training status')
 parser.add_argument('--save_results', action='store_true',
                     help='save output results')

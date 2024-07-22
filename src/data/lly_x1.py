@@ -16,8 +16,25 @@ def down_sample(img, scale):
     h,w = img.shape[-2:]
     img_down = img[...,range(0, h, scale), :]
     img_down = img_down[..., :, range(0, w, scale)]
-
     return img_down
+
+def padding_zero(img, scale=2):
+    """down sample with scale and padding zeros"""
+    img_down = img.copy()
+    h,w = img.shape[-2:]
+    for i in range(1,scale):
+        img_down[..., range(i, h, scale),:] = 0
+        for j in range(1,scale):
+            img_down[..., :, range(j, w, scale)] = 0
+    return img_down
+
+def padding_zero_lr(lr,scale=2):
+    h,w=lr.shape
+    out = np.zeros([h*scale,w*scale])
+    for i in range(h):
+        for j in range(w):
+            out[i*scale, j*scale]=lr[i,j]
+    return out
 
 class BurstSRDataset(torch.utils.data.Dataset):
     """ used for burst dataset
@@ -51,12 +68,10 @@ class BurstSRDataset(torch.utils.data.Dataset):
 
         self.substract_black_level = True
         self.white_balance = False
-        self.add_spmap = args.add_spmap
-        
+
         self.burst_list = self._get_burst_list(data_id)
         if self.split == 'train':
 
-            # n_patch = args.batch_size * args.test_every
             n_patch = 1 * args.test_every
             n_image = len(self.burst_list)
             if n_image == 0:
@@ -83,45 +98,35 @@ class BurstSRDataset(torch.utils.data.Dataset):
     def _get_lr_image(self, burst_id, im_id, start_row=0):  # directly read image and to tensor
         ################## get burst_lr ##################
         scale = self.args.scale[0]
-        # im_id: 0-24, burst_id:0-56
-        if not os.path.exists(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png'):
-            hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
-        else:
-            hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id+1) + '_X1_X1.png', 0)
-        
+        hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id], 0)
         # median filter to remove noise
         # hr_image = cv2.medianBlur(hr_image, ksize=3)
         
         # padding [1000,1000] -> [1024, 1024]
-        if scale == 3 and self.args.model != 'fd_unet':
-            hr_image = cv2.copyMakeBorder(hr_image, 4, 4, 4, 4, cv2.BORDER_CONSTANT, value=0)
-        else:
-            hr_image = cv2.copyMakeBorder(hr_image, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
+        hr_image = cv2.copyMakeBorder(hr_image, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
         
         if hr_image is None:
             # hr_image = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/' + '1_X1_X1.png', 0)
-            print('path is not exist: ', self.root + '/' + self.burst_list[burst_id] + '/' + str(im_id) + '_X1_X1.png')
+            print('path is not exist: ', self.root + '/' + self.burst_list[burst_id])
         
         if self.downsample_gt:
             h,_ = hr_image.shape[-2:]
             hr_image = hr_image[...,range(start_row,h,2),:]
-
-        lr_image = down_sample(hr_image, scale=scale)
-        lr_image = (lr_image - lr_image.min()) / (lr_image.max() - lr_image.min())
+            
+        if self.args.model == 'fd_unet':
+            lr_image = padding_zero(hr_image, scale=scale)
+        else: 
+            lr_image = down_sample(hr_image, scale=scale)
+        lr_image = (lr_image - lr_image.min()) / lr_image.max()
         lr_image = torch.from_numpy(lr_image)
         return lr_image
 
     def _get_gt_image(self, burst_id, start_row):
         if self.split != 'val_divided':
-            gt_img = cv2.imread(self.root + '/' + self.burst_list[burst_id] + '/1_X1_X1.png',0)
+            gt_img = cv2.imread(self.root + '/' + self.burst_list[burst_id],0)
             # median filter to remove noise
             # gt_img = cv2.medianBlur(gt_img, ksize=3)
-            scale = self.args.scale[0]
-            if scale == 3 and self.args.model != 'fd_unet':
-                gt_img = cv2.copyMakeBorder(gt_img, 4, 4, 4, 4, cv2.BORDER_CONSTANT, value=0)
-            else:
-                gt_img = cv2.copyMakeBorder(gt_img, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
-                
+            gt_img = cv2.copyMakeBorder(gt_img, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
             if self.downsample_gt:
                 h,_ = gt_img.shape[-2:]
                 gt_img = gt_img[...,range(start_row,h,2),:]
@@ -130,7 +135,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
             # gt_img = cv2.medianBlur(gt_img, ksize=3)
             gt_img = cv2.copyMakeBorder(gt_img, 6, 6, 12, 12, cv2.BORDER_CONSTANT, value=0)
             
-        gt_img = (gt_img- gt_img.min()) / (gt_img.max() - gt_img.min())  # norm
+        gt_img = (gt_img- gt_img.min()) / gt_img.max()  # norm
         gt_img = torch.from_numpy(gt_img)
         return gt_img
 
@@ -150,13 +155,18 @@ class BurstSRDataset(torch.utils.data.Dataset):
         # ids = [0, ] + ids
         return ids
     
-    def _get_crop(self, frames, gt, patch_size=(64,64), scale=2, center_crop=False, patch_select='random', add_spmap=False):
+    def _get_crop(self, frames, gt, patch_size=(64,64), scale=2, center_crop=False, patch_select='random'):
         ih, iw = frames[0].shape[:2]  # 256,
         p = scale
         if isinstance(patch_size, int):
             patch_size = [patch_size, patch_size]
-        tp = [num * scale for num in patch_size]
-        ip = [num // scale for num in tp]  # 64
+            
+        if self.args.model == 'fd_unet':
+            tp = [num for num in patch_size]
+            ip = [num for num in tp]  # 64
+        else:
+            tp = [num * scale for num in patch_size]
+            ip = [num // scale for num in tp]  # 64
 
         if center_crop:
             ix = (iw - patch_size[1]) // 2
@@ -240,15 +250,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
         ]
         # cord information
         cord = [ty, tx, ty + tp[0], tx + tp[1]]
-        if add_spmap:
-            sp_map = generate_sample_map(ih*scale,iw*scale, mode=self.args.spmap_mode)
-            sp_map = torch.from_numpy(sp_map)
-            sp_map = sp_map.float()
-            sp_map = sp_map[...,ty:(ty+tp[0]), tx:(tx+tp[1])]
-            # sp_map = sp_map.cuda()
-            return ret, cord, sp_map  # ret[0]: burst list, ret[1]: gt
-        else:
-            return ret, cord
+        return ret, cord  # ret[0]: burst list, ret[1]: gt
     
     def _augment(self, frames, gt, hflip=True, rot=True): 
         hflip = hflip and random.random() < 0.5
@@ -283,37 +285,28 @@ class BurstSRDataset(torch.utils.data.Dataset):
         # Read the burst images along with HR ground truth
         frames, gt, meta_info, start_row = self.get_burst(index, im_ids)
 
-        # print('***', frames[0].shape, gt.shape)
-
         # Extract crop if needed
         if self.split == 'train':
-            if self.add_spmap:
-                ret, patch_cord, sp_map = self._get_crop(frames, gt, patch_size=self.args.patch_size, scale=self.args.scale[0], patch_select=self.args.patch_select, add_spmap=self.add_spmap)
-            else:
-                ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.patch_size, scale=self.args.scale[0], patch_select=self.args.patch_select, add_spmap=self.add_spmap)
+            ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.patch_size, scale=self.args.scale[0], patch_select=self.args.patch_select)
             burst_list, gt = ret
             # print('**', gt.shape)
             if not self.args.no_augment:
                 burst_list, gt = self._augment(burst_list, gt)
         else:
             # burst_list, gt = self._get_crop(frames, gt, patch_size=512//self.args.scale[0], scale=self.args.scale[0], center_crop=True)
-            if self.add_spmap:
-                ret, patch_cord, sp_map = self._get_crop(frames, gt, patch_size=self.args.test_patch_size, scale=self.args.scale[0], center_crop=True, add_spmap=self.add_spmap)
-            else: 
-                ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.test_patch_size, scale=self.args.scale[0], center_crop=True, add_spmap=self.add_spmap)
+ 
+            ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.test_patch_size, scale=self.args.scale[0], center_crop=True)
             burst_list, gt = ret
         patch_cord.append(start_row)
-        
         # unsqueence
         burst_list = [img.unsqueeze(0) for img in burst_list]
         gt = gt.unsqueeze(0).float()
         burst = torch.stack(burst_list, dim=0).float()  # [5,1,h,w]，封装后，添加batch
         if self.burst_size == 1:
             burst = burst.squeeze(0)  # [1,1,h,w]->[1,h,w]
-        if self.add_spmap:
-            # burst = torch.cat([burst, sp_map], dim=0)
-            patch_cord.append(sp_map)
+        
         # print('start_row, ***', patch_cord[4], gt.shape, burst.shape)
+
         return burst, gt, meta_info, patch_cord  # dict
 
 def image_entrop_gray(img):  # input:[0,1]
@@ -363,17 +356,3 @@ def split_patch(img, patch_num=[4,4]):
         for j in range(n_patch_w):
             patch_list.append(img[...,i*patch_size_h:(i+1)*patch_size_h,j*patch_size_w:(j+1)*patch_size_w])
     return patch_list
-
-def generate_sample_map(h,w, mode='uniform'):
-    if mode == 'uniform':
-        sample_map = np.ones([1,h,w])
-    elif mode == 'nonuniform':
-        sample_map_row = np.linspace(0,1,num=w//2,endpoint=True)
-        if w % 2 == 0:
-            out = np.concatenate([sample_map_row, sample_map_row[::-1]], axis=0)
-        else:
-            out = np.concatenate([sample_map_row, sample_map_row[::-1], np.zeros(w%2)], axis=0)
-        sample_map = np.expand_dims(out, 0).repeat(h ,axis=0)
-        sample_map = np.expand_dims(sample_map,0)
-        # sample_map = np.expand_dims(sample_map,0)
-    return sample_map

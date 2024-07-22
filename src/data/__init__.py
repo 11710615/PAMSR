@@ -32,14 +32,19 @@ class Data:
                     module_name = d
                     m = import_module('data.'+module_name.lower())
                     datasets.append(getattr(m, 'BurstSRDataset')(args, split='train'))
-                elif d in ['burst_v2']:
-                    module_name = d
-                    m = import_module('data.' + module_name.lower())
-                    datasets.append(getattr(m, 'BurstSRDataset')(args, split='train'))
-                elif d in ['mid_filter']:
-                    module_name = d
+                elif d in ['test_reg', 'test_unreg','test_reg_mid', 'test_unreg_mid','test_mid_reg']:
+                    module_name = 'syn_lr'
                     m = import_module('data.' + module_name.lower())
                     datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
+                elif d in ['mid_filter']:
+                    if args.model in ['fd_unet','unet']:
+                        module_name = 'pam_rec'
+                        m = import_module('data.pam_rec')
+                        datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
+                    else:
+                        module_name = d
+                        m = import_module('data.' + module_name.lower())
+                        datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
                 elif d in ['burst_bsr']:
                     module_name = d
                     m = import_module('data.' + module_name.lower())
@@ -48,15 +53,20 @@ class Data:
                     module_name = 'real_lr'
                     m = import_module('data.' + module_name.lower())
                     datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
-                elif d in ['burst_v3']:
+                elif d in ['burst_v3', 'reg_mid']:
                     if args.model in ['fd_unet','unet']:
                         module_name = 'pam_rec'
                         m = import_module('data.pam_rec')
                         datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))
                     else:
-                        module_name = d
+                        print('loading the dataset: {}'.format(d))
+                        module_name = 'burst_v3'
                         m = import_module('data.' + module_name.lower())
-                        datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))                
+                        datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))      
+                elif d in ['lly_x1']:
+                    module_name = 'lly_x1'
+                    m = import_module('data.' + module_name.lower())
+                    datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))          
                 else:
                     module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
                     m = import_module('data.' + module_name.lower())
@@ -86,14 +96,19 @@ class Data:
                     testset = getattr(m, 'BurstSRDataset')(args, split='val_divided')
                 else:
                     testset = getattr(m, 'BurstSRDataset')(args, split='val')
-            elif d in ['burst_v2']:
-                module_name = d
-                m = import_module('data.' + module_name.lower())
-                testset = getattr(m, 'BurstSRDataset')(args, split='val')
-            elif d in ['mid_filter']:
-                module_name = d
+            elif d in ['test_reg', 'test_unreg','test_reg_mid', 'test_unreg_mid','test_mid_reg']:
+                module_name = 'syn_lr'
                 m = import_module('data.' + module_name.lower())
                 testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
+            elif d in ['mid_filter']:
+                if args.model in ['fd_unet','unet']:
+                    module_name = 'pam_rec'
+                    m = import_module('data.pam_rec')
+                    testset = getattr(m,'BurstSRDataset')(args, data_id, split='val') 
+                else:
+                    module_name = d
+                    m = import_module('data.' + module_name.lower())
+                    testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
             elif d in ['burst_bsr']:
                 module_name = d
                 m = import_module('data.' + module_name.lower())
@@ -102,15 +117,20 @@ class Data:
                 module_name = 'real_lr'
                 m = import_module('data.' + module_name.lower())
                 testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
-            elif d in ['burst_v3']:
+            elif d in ['burst_v3', 'reg_mid']:
                 if args.model in ['fd_unet','unet']:
                     module_name = 'pam_rec'
                     m = import_module('data.pam_rec')
                     testset = getattr(m,'BurstSRDataset')(args, data_id, split='val') 
                 else:
-                    module_name = d
+                    print('loading the dataset: {}'.format(d))
+                    module_name = 'burst_v3'
                     m = import_module('data.' + module_name.lower())
                     testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val') 
+            elif d in ['lly_x1']:
+                module_name = 'lly_x1'
+                m = import_module('data.' + module_name.lower())
+                testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
             else:
                 module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
                 m = import_module('data.' + module_name.lower())

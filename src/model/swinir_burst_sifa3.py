@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+from torchvision.ops import DeformConv2d
 
 def make_model(args, parent=False):
     return SwinIR(img_size=args.patch_size, patch_size=1, burst_size=args.burst_size, in_chans=3, out_chans=args.output_channels,
@@ -17,7 +18,7 @@ def make_model(args, parent=False):
                  window_size=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, upscale=args.scale[0], img_range=1., upsampler='pixelshuffle', resi_connection='1conv',add_spmap=False)
+                 use_checkpoint=False, upscale=args.scale[0], img_range=1., upsampler='pixelshuffle', resi_connection='1conv',add_spmap=args.add_spmap)
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -188,7 +189,7 @@ class SwinTransformerBlock(nn.Module):
         norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
     """
 
-    def __init__(self, dim, input_resolution, num_heads, window_size=7, shift_size=0,
+    def __init__(self, dim, input_resolution, num_heads, burst_size, window_size=7, shift_size=0,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
                  act_layer=nn.GELU, norm_layer=nn.LayerNorm):
         super().__init__()
@@ -216,6 +217,7 @@ class SwinTransformerBlock(nn.Module):
 
         if self.shift_size > 0:
             attn_mask = self.calculate_mask(self.input_resolution)
+            self.align_fuse_module = EBFA(input_nc=dim, burst_size=burst_size)
         else:
             attn_mask = None
 
@@ -278,12 +280,15 @@ class SwinTransformerBlock(nn.Module):
             x = torch.roll(shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
         else:
             x = shifted_x
-        # print(x.shape,'****')
-        # k
         x = x.view(B, H * W, C)
 
         # FFN
         x = shortcut + self.drop_path(x)
+        if self.shift_size > 0:
+            x = x.view(B, H, W, C).permute(0,3,1,2)
+            x = self.align_fuse_module(x)
+            x = x.permute(0,2,3,1).view(B, H * W, C)
+
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
         return x
@@ -376,7 +381,7 @@ class BasicLayer(nn.Module):
         use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False.
     """
 
-    def __init__(self, dim, input_resolution, depth, num_heads, window_size,
+    def __init__(self, dim, input_resolution, depth, num_heads, window_size, burst_size,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., norm_layer=nn.LayerNorm, downsample=None, use_checkpoint=False):
 
@@ -395,7 +400,7 @@ class BasicLayer(nn.Module):
                                  qkv_bias=qkv_bias, qk_scale=qk_scale,
                                  drop=drop, attn_drop=attn_drop,
                                  drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
-                                 norm_layer=norm_layer)
+                                 norm_layer=norm_layer, burst_size=burst_size)
             for i in range(depth)])
 
         # patch merging layer
@@ -449,7 +454,7 @@ class RSTB(nn.Module):
         resi_connection: The convolutional block before residual connection.
     """
 
-    def __init__(self, dim, input_resolution, depth, num_heads, window_size,
+    def __init__(self, dim, input_resolution, depth, num_heads, window_size, burst_size,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., norm_layer=nn.LayerNorm, downsample=None, use_checkpoint=False,
                  img_size=224, patch_size=4, resi_connection='1conv'):
@@ -469,7 +474,7 @@ class RSTB(nn.Module):
                                          drop_path=drop_path,
                                          norm_layer=norm_layer,
                                          downsample=downsample,
-                                         use_checkpoint=use_checkpoint)
+                                         use_checkpoint=use_checkpoint, burst_size=burst_size)
 
         if resi_connection == '1conv':
             self.conv = nn.Conv2d(dim, dim, 3, 1, 1)
@@ -624,6 +629,152 @@ class UpsampleOneStep(nn.Sequential):
         flops = H * W * self.num_feat * 3 * 9
         return flops
 
+class RGCAB(nn.Module):
+    def __init__(self, num_features, num_rcab, reduction):
+        super(RGCAB, self).__init__()
+        self.module = [RGCA(num_features, reduction) for _ in range(num_rcab)]
+        self.module.append(nn.Conv2d(num_features, num_features, kernel_size=3, padding=1, bias=False))
+        self.module = nn.Sequential(*self.module)
+
+    def forward(self, x):
+        return x + self.module(x)
+    
+    
+class RGCA(nn.Module):
+    def __init__(self, n_feat, reduction=8, bias=False, act=nn.LeakyReLU(negative_slope=0.2,inplace=True), groups =1):
+
+        super(RGCA, self).__init__()
+
+        self.n_feat = n_feat
+        self.groups = groups
+        self.reduction = reduction
+
+        modules_body = [nn.Conv2d(n_feat, n_feat, 3,1,1 , bias=bias, groups=groups), act, nn.Conv2d(n_feat, n_feat, 3,1,1 , bias=bias, groups=groups)]
+        self.body   = nn.Sequential(*modules_body)
+
+        self.gcnet = nn.Sequential(GCA(n_feat, n_feat))
+        self.conv1x1 = nn.Conv2d(n_feat, n_feat, kernel_size=1, bias=bias)
+
+    def forward(self, x):
+        res = self.body(x)
+        res = self.gcnet(res)
+        res = self.conv1x1(res)
+        res += x
+        return res
+    
+    
+class GCA(nn.Module):
+    def __init__(self, inplanes, planes, act=nn.LeakyReLU(negative_slope=0.2,inplace=True), bias=False):
+        super(GCA, self).__init__()
+
+        self.conv_mask = nn.Conv2d(inplanes, 1, kernel_size=1, bias=bias)
+        self.softmax = nn.Softmax(dim=2)
+
+        self.channel_add_conv = nn.Sequential(
+            nn.Conv2d(inplanes, planes, kernel_size=1, bias=bias),
+            act,
+            nn.Conv2d(planes, inplanes, kernel_size=1, bias=bias)
+        )
+
+    def spatial_pool(self, x):
+        batch, channel, height, width = x.size()
+        input_x = x
+        # [N, C, H * W]
+        input_x = input_x.view(batch, channel, height * width)
+        # [N, 1, C, H * W]
+        input_x = input_x.unsqueeze(1)
+        # [N, 1, H, W]
+        context_mask = self.conv_mask(x)
+        # [N, 1, H * W]
+        context_mask = context_mask.view(batch, 1, height * width)
+        # [N, 1, H * W]
+        context_mask = self.softmax(context_mask)
+        # [N, 1, H * W, 1]
+        context_mask = context_mask.unsqueeze(3)
+        # [N, 1, C, 1]
+        context = torch.matmul(input_x, context_mask)
+        # [N, C, 1, 1]
+        context = context.view(batch, channel, 1, 1)
+        return context
+    
+    def forward(self, x):
+        # [N, C, 1, 1]
+        context = self.spatial_pool(x)
+        # [N, C, 1, 1]
+        channel_add_term = self.channel_add_conv(context)
+        x = x + channel_add_term
+        return x
+
+
+class EBFA(nn.Module):
+    """
+    Edge boosting feature alignment (EBFA) module aligns all ohter images in the input burst to the base frame
+    """
+    def __init__(self, input_nc, burst_size):
+        super(EBFA, self).__init__()
+        bias = False
+        reduction = 8
+        kernel_size = 3
+        deform_groups = 9
+        out_channels = deform_groups * 3 * kernel_size**2
+        self.burst_size = burst_size
+        self.num_features = input_nc
+        self.bottleneck = nn.Conv2d(self.num_features*2, self.num_features, kernel_size=3, padding=1, bias=bias)
+
+        # Offset Conv
+        self.offset_conv1 = nn.Conv2d(self.num_features, out_channels, 3, stride=1, padding=1, bias=bias)
+        
+        # Deform Conv
+        self.deform1 = DeformConv2d(self.num_features, self.num_features, 3, padding=1, groups=deform_groups)
+        
+        ## Refined Aligned Feature
+        # self.feat_ext1 = nn.Sequential(*[RGCAB(self.num_features, 3, reduction) for _ in range(3)])
+        self.cor_conv1 = nn.Sequential(nn.Conv2d(self.num_features, self.num_features, kernel_size=3, padding=1, bias=bias))
+
+        # feature fusion
+        conv_burst = [nn.Conv2d(self.burst_size, self.burst_size*4, 3, 1, 1), nn.Conv2d(self.burst_size*4, self.burst_size, 3, 1, 1)] 
+        self.conv_burst = nn.Sequential(*conv_burst)
+
+    def offset_gen(self, x):
+        o1, o2, mask = torch.chunk(x, 3, dim=1)
+        offset = torch.cat((o1, o2), dim=1)
+        mask = torch.sigmoid(mask)
+        return offset, mask
+    
+    def def_alignment(self, burst_feat):
+        b, f, H, W = burst_feat.size()
+        ref = burst_feat[0].unsqueeze(0)
+        
+        ref = torch.repeat_interleave(ref, b, dim=0)
+        feat = self.bottleneck(torch.cat([ref, burst_feat], dim=1))
+
+        offset1, mask1 = self.offset_gen(self.offset_conv1(feat))
+        aligned_feat = self.deform1(burst_feat, offset1, mask1)  
+        
+        return aligned_feat
+    
+    def burst_feat_fusion(self, burst_feat):
+        """
+            burst_feat: [burst, feat, h, w]
+        """
+        # burst features fusion
+        x = burst_feat.permute(1,0,2,3).contiguous()  # [180,5,256,256]
+        x = self.conv_burst(x)  # [180,5,256,256]->[180,90,256,256]
+        x = x.permute(1,0,2,3)  # ->[5,180,256,256]
+        return x
+        
+    def forward(self, x):
+        base_frame_feat = x[0].unsqueeze(0)
+        ## Burst Feature Alignment
+        burst_feat = self.def_alignment(x)
+        ## Refined Aligned Feature
+        # burst_feat = self.feat_ext1(burst_feat)                
+        Residual = burst_feat - base_frame_feat
+        Residual = self.cor_conv1(Residual)
+        burst_feat += Residual                   # (B, num_features, H/2, W/2)
+        burst_feat_fus = self.burst_feat_fusion(burst_feat)
+        return burst_feat_fus
+
 
 class SwinIR(nn.Module):
     r""" SwinIR
@@ -653,7 +804,7 @@ class SwinIR(nn.Module):
         resi_connection: The convolutional block before residual connection. '1conv'/'3conv'
     """
 
-    def __init__(self, img_size=64, patch_size=1, burst_size=1, in_chans=3,out_chans=1,
+    def __init__(self, img_size=64, patch_size=1, burst_size=1, in_chans=3, out_chans=1,
                  embed_dim=180, depths=[6, 6, 6, 6, 6, 6], num_heads=[6, 6, 6, 6, 6, 6],
                  window_size=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
@@ -678,10 +829,8 @@ class SwinIR(nn.Module):
         #####################################################################################################
         ################################### 1, shallow feature extraction ###################################
         # concat in channel with a sample map
-        if add_spmap:
-            self.conv_first_0 = nn.Conv2d(burst_size+1, 3, 3, 1, 1)
-        else:
-            self.conv_first_0 = nn.Conv2d(burst_size, 3, 3, 1, 1)
+        self.conv_first_0 = nn.Conv2d(1, in_chans, 3, 1, 1)
+ 
         self.conv_first = nn.Conv2d(num_in_ch, embed_dim, 3, 1, 1)
 
         #####################################################################################################
@@ -734,7 +883,8 @@ class SwinIR(nn.Module):
                          use_checkpoint=use_checkpoint,
                          img_size=img_size,
                          patch_size=patch_size,
-                         resi_connection=resi_connection
+                         resi_connection=resi_connection,
+                         burst_size=burst_size
 
                          )
             self.layers.append(layer)
@@ -755,6 +905,8 @@ class SwinIR(nn.Module):
         ################################ 3, high quality image reconstruction ################################
         if self.upsampler == 'pixelshuffle':
             # for classical SR
+            self.fuse = nn.Sequential(*[nn.Conv2d(burst_size, burst_size, 3, 1, 1), 
+                                       nn.Conv2d(burst_size, 1, 3, 1, 1)])
             self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
                                                       nn.LeakyReLU(inplace=True))
             self.upsample = Upsample(upscale, num_feat)
@@ -762,6 +914,7 @@ class SwinIR(nn.Module):
 
             # change the output channel on the condiction of pretrained model
             self.conv_final = nn.Conv2d(num_out_ch, out_chans,3,1,1)
+            
             # self.act_lat = nn.Sigmoid()
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR (to save parameters)
@@ -823,48 +976,39 @@ class SwinIR(nn.Module):
         return x
 
     def forward(self, x):
-        H, W = x.shape[2:]
-        x = self.check_image_size(x)
+        # [1,num_burst, 1, h, w]->[num_burst,1,h,w]
+        if len(x.shape)==5:
+            x = x[0]
 
-        # self.mean = self.mean.type_as(x)
-        # x = (x - self.mean) * self.img_range
-        x = x / self.img_range  # [0,1]
+        H, W = x.shape[-2:]
+        x = self.check_image_size(x)
+        # x = x / self.img_range  # [0,1]
         # print('img_range', torch.max(x), torch.min(x))
         # r
         if self.upsampler == 'pixelshuffle':
             # for classical SR
             x = self.conv_first_0(x)
             x = self.conv_first(x)
+            base_frame_feat = x[0].unsqueeze(0)
+            
+            
             x = self.conv_after_body(self.forward_features(x)) + x
+            
+            # [3,180,h,w] -> [180,3,h,w] -> [180,1,h,w] -> [1,180,h,w]
+            # fuse the feature from the swinir
+            x = x.transpose(1,0)
+            x = self.fuse(x)
+            x = x.transpose(1,0)
+            
             x = self.conv_before_upsample(x)
             x = self.conv_last(self.upsample(x))
             # change the channel
             x = self.conv_final(x)
             # x = self.act_lat(x) # [0,1]
-        elif self.upsampler == 'pixelshuffledirect':
-            # for lightweight SR
-            x = self.conv_first(x)
-            x_f = self.forward_features(x)
-            # add memory bank to save repeatting mode
-            
-            x = self.conv_after_body(x_f) + x
-            x = self.upsample(x)
-        elif self.upsampler == 'nearest+conv':
-            # for real-world SR
-            x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
-            x = self.conv_before_upsample(x)
-            x = self.lrelu(self.conv_up1(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
-            x = self.lrelu(self.conv_up2(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
-            x = self.conv_last(self.lrelu(self.conv_hr(x)))
-        else:
-            # for image denoising and JPEG compression artifact reduction
-            x_first = self.conv_first(x)
-            res = self.conv_after_body(self.forward_features(x_first)) + x_first
-            x = x + self.conv_last(res)
+
 
         x = x * self.img_range  # [0,1]
-        # x = x * self.img_range
+
         return x[:, :, :H*self.upscale, :W*self.upscale]
 
     def flops(self):
@@ -887,9 +1031,7 @@ class SwinIR(nn.Module):
                 try:
                     own_state[name].copy_(param)
                 except Exception:
-                    if name.find('tail') >= 0 or name.find('upsample') >= 0:
-                        print('Replace pre-trained upsampler to new one...')
-                    else:
+                    if name.find('tail') == -1:
                         raise RuntimeError('While copying the parameter named {}, '
                                            'whose dimensions in the model are {} and '
                                            'whose dimensions in the checkpoint are {}.'

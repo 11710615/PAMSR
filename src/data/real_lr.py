@@ -46,34 +46,32 @@ class BurstSRDataset(torch.utils.data.Dataset):
         assert split in ['val']
         root = args.data_test[0]  # list
         # root = args.dir_data + '/' + root + '/' 
-        root_lr = args.dir_data + '/' + root + '/' + 'real_lr_x2_{}'.format('nomid')
-        root_hr = args.dir_data + '/' + root + '/' + 'real_hr'
+        root_lr = args.dir_data + '/' + root + '/test' #'real_lr_x2_{}'.format('nomid')
+        # root_hr = args.dir_data + '/' + root + '/' + 'real_hr'
+        
         super().__init__()
         self.args = args
         # self.burst_size = burst_size
         self.split = split
         self.center_crop = center_crop
         self.name = name
-        self.root_hr = root_hr
+        # self.root_hr = root_hr
         self.root_lr = root_lr
 
         self.substract_black_level = True
         self.white_balance = False
 
-        self.burst_list, self.lr_list = self._get_burst_list(data_id)
+        self.lr_list = self._get_burst_list(data_id)
 
     def _get_burst_list(self, data_id):
-        burst_list = sorted(os.listdir(self.root_hr))  # 'busrst_data/train'
         lr_list = sorted(os.listdir(self.root_lr))
-        #print(burst_list)
-        out = [burst_list[i] for i in data_id]
         out_lr = [lr_list[i] for i in data_id]
         # print('out**', out)
         # k
-        return out, out_lr  # 'brain_1','brain_3',...,'ear_8'
+        return out_lr  # 'brain_1','brain_3',...,'ear_8'
 
     def get_burst_info(self, burst_id):
-        burst_info = {'burst_size': 25, 'burst_name': self.burst_list[burst_id]}
+        burst_info = {'burst_size': 1, 'burst_name': self.lr_list[burst_id]}
         return burst_info
 
     def _get_lr_image(self, burst_id, im_id):  # directly read image and to tensor
@@ -86,26 +84,18 @@ class BurstSRDataset(torch.utils.data.Dataset):
         # median filter to remove noise
         # hr_image = cv2.medianBlur(hr_image, ksize=3)
             
-        # padding [1000,1000] -> [512, 512]
+        # padding [1000,1000] -> [512, 512] / [500,1000]->[512,1024]
         padding = 12 // 2
-        lr_image = cv2.copyMakeBorder(lr_image, padding, padding, padding, padding, cv2.BORDER_CONSTANT, value=0)
+        lr_image = cv2.copyMakeBorder(lr_image, padding, padding, 2*padding, 2*padding, cv2.BORDER_CONSTANT, value=0)
         if self.args.model == 'fd_unet':
             lr_image = padding_zero_lr(lr_image, scale=2)
-        lr_image = (lr_image - lr_image.min()) / lr_image.max()
+        lr_image = (lr_image - lr_image.min()) / (lr_image.max()- lr_image.min())
         lr_image = torch.from_numpy(lr_image)
         return lr_image
 
-    def _get_gt_image(self, burst_id):
-
-        gt_img = cv2.imread(self.root_hr + '/' + self.burst_list[burst_id], 0)
-        gt_img = cv2.copyMakeBorder(gt_img, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
-        gt_img = (gt_img- gt_img.min()) / gt_img.max()  # norm
-        gt_img = torch.from_numpy(gt_img)
-        return gt_img
-
     def get_burst(self, burst_id, im_ids, info=None):
         frames = [self._get_lr_image(burst_id, i) for i in im_ids]
-        gt = self._get_gt_image(burst_id)
+        gt = torch.zeros([2048,4096])
         if info is None:
             info = self.get_burst_info(burst_id)
 
@@ -227,13 +217,13 @@ class BurstSRDataset(torch.utils.data.Dataset):
     
     def __len__(self):
         if self.split == 'train':
-            return len(self.burst_list) * self.repeat
+            return len(self.lr_list) * self.repeat
         else:
-            return len(self.burst_list) 
+            return len(self.lr_list) 
 
     def _get_index(self, idx):
         if self.split == 'train':
-            return idx % len(self.burst_list)
+            return idx % len(self.lr_list)
         else:
             return idx
 
@@ -257,7 +247,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
                 burst_list, gt = self._augment(burst_list, gt)
         else:
             # burst_list, gt = self._get_crop(frames, gt, patch_size=512//self.args.scale[0], scale=self.args.scale[0], center_crop=True)
-            ret, patch_cord = self._get_crop(frames, gt, patch_size=self.args.test_patch_size, scale=self.args.scale[0], center_crop=True)
+            ret, patch_cord = self._get_crop(frames, gt, patch_size=frames[0].shape, scale=self.args.scale[0], center_crop=True)
             burst_list, gt = ret
         start_row = 0
         patch_cord.append(start_row)

@@ -256,7 +256,7 @@ class Trainer_burst_ema():
             return epoch >= self.args.epochs
 
     def center_crop(self, sr, hr):
-        print(sr.shape, hr.shape, '***')
+        # print(sr.shape, hr.shape, '***')
         assert(sr.shape==hr.shape)
         h, w = sr.shape[-2:]
         h_crop = int(h/100)*100
