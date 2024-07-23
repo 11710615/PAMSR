@@ -139,7 +139,7 @@ class checkpoint():
                 if not queue.empty():
                     filename, tensor = queue.get()
                     if filename is None: break
-                    print(tensor.shape,'********')
+                    # print(tensor.shape,'********')
                     imageio.imwrite(filename, tensor.numpy())
         
         self.process = [

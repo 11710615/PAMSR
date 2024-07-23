@@ -245,11 +245,13 @@ class Trainer_burst_ema():
             return epoch >= self.args.epochs
 
     def center_crop(self, sr, hr):
-        print(sr.shape, hr.shape, '***')
+        # print(sr.shape, hr.shape, '***')
         # assert(sr.shape==hr.shape)
         h, w = sr.shape[-2:]
-        h_crop = int(h/100)*100
-        w_crop = int(w/100)*100
+        h_crop = self.args.test_patch_size[0]*self.args.scale[0]
+        w_crop = self.args.test_patch_size[1]*self.args.scale[0]
+        # h_crop = int(h/100)*100
+        # w_crop = int(w/100)*100
 
         ih = (h - h_crop) // 2
         iw = (w - w_crop) // 2

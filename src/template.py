@@ -1361,8 +1361,9 @@ def set_template(args):
         args.burst_size = 1
         args.tile = True
         args.scale = '2'
-        args.data_train = 'lly_x1'#'test_mid_reg'
-        args.data_test = 'lly_x1'#'test_unreg_mid'
+        args.data_train = 'lly_x2'#'lly_x1'
+        args.data_test = 'lly_x2'#'lly_x1'
+        args.noPairHR = True
         args.rgb_range = 1
         if args.patch_select=='random':
             flag = ''
@@ -1378,6 +1379,7 @@ def set_template(args):
         args.save = 'syn_x{}/'.format(args.scale) + flag+'proposed_lly_x2_' + args.loss + '_' + flag_rec + '_' + args.data_train
         # args.pre_train = '/mnt/pank/SPSR/experiment9/*grad_window_proposed_x2_1*RL1+0.5*rec_norec_burst_v3/0/model/model_best.pt'
         # args.pre_train = '/mnt/pank/SPSR/experiment/ablation/a2_grad_window_proposed_x2_1*RL1+0.5*rec_norec_test_unreg_mid/0/model/model_best.pt'
-        args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best.pt'
+        # args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best.pt'
+        args.pre_train = '/mnt/pank/SPSR/experiment/syn_x2/grad_window_proposed_lly_x2_1*RL1_norec_lly_x1/0/model/model_best.pt'
 ##################################################################################################
 

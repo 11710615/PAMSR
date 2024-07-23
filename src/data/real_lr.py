@@ -86,7 +86,7 @@ class BurstSRDataset(torch.utils.data.Dataset):
             
         # padding [1000,1000] -> [512, 512] / [500,1000]->[512,1024]
         padding = 12 // 2
-        lr_image = cv2.copyMakeBorder(lr_image, padding, padding, 2*padding, 2*padding, cv2.BORDER_CONSTANT, value=0)
+        # lr_image = cv2.copyMakeBorder(lr_image, padding, padding, 2*padding, 2*padding, cv2.BORDER_CONSTANT, value=0)
         if self.args.model == 'fd_unet':
             lr_image = padding_zero_lr(lr_image, scale=2)
         lr_image = (lr_image - lr_image.min()) / (lr_image.max()- lr_image.min())
@@ -95,7 +95,8 @@ class BurstSRDataset(torch.utils.data.Dataset):
 
     def get_burst(self, burst_id, im_ids, info=None):
         frames = [self._get_lr_image(burst_id, i) for i in im_ids]
-        gt = torch.zeros([2048,4096])
+        h,w = frames[0].shape[-2:]
+        gt = torch.zeros([h*self.args.scale[0],w*self.args.scale[0]])
         if info is None:
             info = self.get_burst_info(burst_id)
 
@@ -234,9 +235,6 @@ class BurstSRDataset(torch.utils.data.Dataset):
 
         # Read the burst images along with HR ground truth
         frames, gt, meta_info = self.get_burst(index, im_ids)
-
-        # print('***', frames[0].shape, gt.shape)
-        # k
 
         # Extract crop if needed
         if self.split == 'train':

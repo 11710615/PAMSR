@@ -63,7 +63,7 @@ class Data:
                         module_name = 'burst_v3'
                         m = import_module('data.' + module_name.lower())
                         datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))      
-                elif d in ['lly_x1']:
+                elif d in ['lly_x1','lly_x2']:
                     module_name = 'lly_x1'
                     m = import_module('data.' + module_name.lower())
                     datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))          
@@ -127,7 +127,7 @@ class Data:
                     module_name = 'burst_v3'
                     m = import_module('data.' + module_name.lower())
                     testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val') 
-            elif d in ['lly_x1']:
+            elif d in ['lly_x1','lly_x2']:
                 module_name = 'lly_x1'
                 m = import_module('data.' + module_name.lower())
                 testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')

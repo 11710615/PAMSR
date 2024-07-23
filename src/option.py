@@ -33,7 +33,8 @@ parser.add_argument('--use_mask', action='store_true',
                     help='use mask at the model output')
 parser.add_argument('--use_ema', action='store_true',
                     help='use ema')
-
+parser.add_argument('--noPairHR', action='store_true',
+                    help='test without PairHR')
 parser.add_argument('--dir_demo', type=str, default='../test',
                     help='demo image directory')
 parser.add_argument('--data_train', type=str, default='burst_v3',

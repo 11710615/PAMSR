@@ -81,12 +81,15 @@ class BurstSRDataset(torch.utils.data.Dataset):
 
     def _get_burst_list(self, data_id):
         burst_list = sorted(os.listdir(self.root))  # 'busrst_data/train'
-        #print(burst_list)
-        if self.split == 'train':
-            data_id = data_id[0]
+        # print(burst_list,'****')
+        if self.args.noPairHR and self.args.test_only:
+            out = [burst_list[i] for i in data_id]
         else:
-            data_id = data_id[1]
-        out = [burst_list[i] for i in data_id]
+            if self.split == 'train':
+                data_id = data_id[0]
+            else:
+                data_id = data_id[1]
+            out = [burst_list[i] for i in data_id]
         # print('out**', out)
         # k
         return out  # 'brain_1','brain_3',...,'ear_8'
@@ -116,25 +119,24 @@ class BurstSRDataset(torch.utils.data.Dataset):
         if self.args.model == 'fd_unet':
             lr_image = padding_zero(hr_image, scale=scale)
         else: 
-            lr_image = down_sample(hr_image, scale=scale)
+            if self.args.noPairHR and self.args.test_only:
+                lr_image = hr_image
+            else:
+                lr_image = down_sample(hr_image, scale=scale)
         lr_image = (lr_image - lr_image.min()) / lr_image.max()
         lr_image = torch.from_numpy(lr_image)
         return lr_image
 
-    def _get_gt_image(self, burst_id, start_row):
-        if self.split != 'val_divided':
+    def _get_gt_image(self, burst_id, start_row, h, w):
+        if self.args.noPairHR and self.args.test_only:
+            p = self.args.scale[0]
+            gt_img = np.zeros([h*p,w*p])
+        else:
             gt_img = cv2.imread(self.root + '/' + self.burst_list[burst_id],0)
             # median filter to remove noise
             # gt_img = cv2.medianBlur(gt_img, ksize=3)
-            gt_img = cv2.copyMakeBorder(gt_img, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
-            if self.downsample_gt:
-                h,_ = gt_img.shape[-2:]
-                gt_img = gt_img[...,range(start_row,h,2),:]
-        else:
-            gt_img = cv2.imread(self.root + '/' + self.burst_list[burst_id], 0)
-            # gt_img = cv2.medianBlur(gt_img, ksize=3)
-            gt_img = cv2.copyMakeBorder(gt_img, 6, 6, 12, 12, cv2.BORDER_CONSTANT, value=0)
-            
+        gt_img = cv2.copyMakeBorder(gt_img, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
+  
         gt_img = (gt_img- gt_img.min()) / gt_img.max()  # norm
         gt_img = torch.from_numpy(gt_img)
         return gt_img
@@ -142,7 +144,8 @@ class BurstSRDataset(torch.utils.data.Dataset):
     def get_burst(self, burst_id, im_ids, info=None):
         start_row = np.random.randint(2)  # 0/1
         frames = [self._get_lr_image(burst_id, i, start_row) for i in im_ids]
-        gt = self._get_gt_image(burst_id, start_row)
+        h,w = frames[0].shape[-2:]
+        gt = self._get_gt_image(burst_id, start_row, h,w)
         if info is None:
             info = self.get_burst_info(burst_id)
 
