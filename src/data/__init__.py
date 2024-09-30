@@ -67,6 +67,10 @@ class Data:
                     module_name = 'lly_x1'
                     m = import_module('data.' + module_name.lower())
                     datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))          
+                elif d.find('ani_sr_real')>=0:
+                    module_name = 'ani_sr_real'
+                    m = import_module('data.' + module_name.lower())
+                    datasets.append(getattr(m, 'BurstSRDataset')(args, data_id, split='train'))         
                 else:
                     module_name = d if d.find('DIV2K-Q') < 0 else 'DIV2KJPEG'
                     m = import_module('data.' + module_name.lower())
@@ -129,6 +133,10 @@ class Data:
                     testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val') 
             elif d in ['lly_x1','lly_x2']:
                 module_name = 'lly_x1'
+                m = import_module('data.' + module_name.lower())
+                testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
+            elif d.find('ani_sr_real')>=0:
+                module_name = 'ani_sr_real'
                 m = import_module('data.' + module_name.lower())
                 testset = getattr(m, 'BurstSRDataset')(args, data_id, split='val')
             else:

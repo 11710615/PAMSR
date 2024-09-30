@@ -245,19 +245,22 @@ class Model(nn.Module):
         tile = min(tile, h, w)
         assert tile % window_size == 0, "tile size should be a multiple of window_size"
         tile_overlap = self.args.tile_overlap  # overlap for tile  56
-        sf = self.scale[0]
+        if self.args.template.find('ani')>=0:
+            sf = [1, self.scale[0]]
+        else:
+            sf = [self.scale[0], self.scale[0]]
         stride = tile - tile_overlap
         h_idx_list = list(range(0, h-tile, stride)) + [h-tile]
         w_idx_list = list(range(0, w-tile, stride)) + [w-tile]
-        E = torch.zeros(batch, 1, h*sf, w*sf).type_as(img_lq)
+        E = torch.zeros(batch, 1, h*sf[0], w*sf[1]).type_as(img_lq)
         W = torch.zeros_like(E)
         for h_idx in h_idx_list:
             for w_idx in w_idx_list:
                 in_patch = img_lq[..., h_idx:h_idx+tile, w_idx:w_idx+tile]
                 out_patch = self.model(in_patch)
                 out_patch_mask = torch.ones_like(out_patch)
-                E[..., h_idx*sf:(h_idx+tile)*sf, w_idx*sf:(w_idx+tile)*sf].add_(out_patch)
-                W[..., h_idx*sf:(h_idx+tile)*sf, w_idx*sf:(w_idx+tile)*sf].add_(out_patch_mask)
+                E[..., h_idx*sf[0]:(h_idx+tile)*sf[0], w_idx*sf[1]:(w_idx+tile)*sf[1]].add_(out_patch)
+                W[..., h_idx*sf[0]:(h_idx+tile)*sf[0], w_idx*sf[1]:(w_idx+tile)*sf[1]].add_(out_patch_mask)
         output = E.div_(W)
 
         return output

@@ -79,7 +79,6 @@ class Trainer_burst_ema():
 
             self.optimizer.zero_grad()
             sr = self.model(burst, 0)
-            # print(sr.shape, burst.shape, hr.shape, 'train')
 
             self.model_ema = ema(self.model, self.model_ema, decay=0.999)
             sr_ema = self.model_ema(burst,0)
@@ -262,8 +261,12 @@ class Trainer_burst_ema():
         h, w = sr.shape[-2:]
         # h_crop = int(h/100)*100
         # w_crop = int(w/100)*100
-        h_crop = self.args.test_patch_size[0]*self.args.scale[0]
-        w_crop = self.args.test_patch_size[1]*self.args.scale[0]
+        if self.args.template.find('ani')>=0:
+            h_crop = self.args.test_patch_size[0]*1
+            w_crop = self.args.test_patch_size[1]*self.args.scale[0]
+        else:
+            h_crop = self.args.test_patch_size[0]*self.args.scale[0]
+            w_crop = self.args.test_patch_size[1]*self.args.scale[0]
         # print(w_crop, h_crop,'****3333333')
         ih = (h - h_crop) // 2
         iw = (w - w_crop) // 2

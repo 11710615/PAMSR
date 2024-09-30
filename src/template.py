@@ -1375,11 +1375,102 @@ def set_template(args):
             flag_rec = 'rec'
         else:
             flag_rec = 'norec'
-        # args.save = 'ablation/a2_'+ flag+'proposed_x2_' + args.loss + '_' + flag_rec + '_' + args.data_train
-        args.save = 'syn_x{}/'.format(args.scale) + flag+'proposed_lly_x2_' + args.loss + '_' + flag_rec + '_' + args.data_train
+        args.save = 'syn_x{}/'.format(args.scale) + flag+'proposed_lly_x2_' + flag_rec + '_' + args.data_train
         # args.pre_train = '/mnt/pank/SPSR/experiment9/*grad_window_proposed_x2_1*RL1+0.5*rec_norec_burst_v3/0/model/model_best.pt'
         # args.pre_train = '/mnt/pank/SPSR/experiment/ablation/a2_grad_window_proposed_x2_1*RL1+0.5*rec_norec_test_unreg_mid/0/model/model_best.pt'
         # args.pre_train = '../experiment/'+ args.save + '/'+str(args.fold)+'/model/model_best.pt'
         args.pre_train = '/mnt/pank/SPSR/experiment/syn_x2/grad_window_proposed_lly_x2_1*RL1_norec_lly_x1/0/model/model_best.pt'
 ##################################################################################################
 
+    if args.template == 'EDSR_paper_x2_ani_sr_real':
+        args.model = 'EDSR_ani'
+        args.n_resblocks = 32
+        args.n_feats = 256
+        args.res_scale = 0.1
+        args.patch_size = (128, 64)
+        args.num_features = 180
+        args.burst_size = 1
+        # args.tile = True
+        args.tile = True
+        args.scale = '2'
+        args.data_train = 'ani_sr_real/1024_256'
+        args.data_test = 'ani_sr_real/1024_128'
+        args.rgb_range = 1
+        if args.downsample_gt:
+            down_scale = 2
+        else:
+            down_scale = 1
+        args.test_patch_size = (1024, 256 // int(args.scale))
+
+        args.loss = '1*RL1'
+        if args.patch_select=='random':
+            flag = ''
+        else:
+            flag = args.patch_select + '_'
+        # args.save = 'test'
+        args.save = flag+'EDSR_paper_x{}-'.format(args.scale) + str(args.burst_size) + '_' + args.loss + '_' + args.data_train
+        #args.pre_train = '../experiment1/pretrain_model/edsr_x2-0edfb8a3.pt'
+        args.no_augment = False
+        # #args.pre_train = '../experiment/'+flag+'EDSR_paper_x2-'+ str(args.burst_size) + '_' + args.loss + '/'+str(args.fold)+'/model/model_best.pt'
+
+    if args.template == 'EDSR_paper_x4_ani_sr_real':
+        args.model = 'EDSR_ani'
+        args.n_resblocks = 32
+        args.n_feats = 256
+        args.res_scale = 0.1
+        args.patch_size = (128, 64)
+        args.num_features = 180
+        args.burst_size = 1
+        # args.tile = True
+        args.tile = True
+        args.scale = '4'
+        args.data_train = 'ani_sr_real/1024_256'
+        args.data_test = 'ani_sr_real/1024_64'
+        args.rgb_range = 1
+        if args.downsample_gt:
+            down_scale = 2
+        else:
+            down_scale = 1
+        args.test_patch_size = (1024, 256 // int(args.scale))
+
+        args.loss = '1*RL1'
+        if args.patch_select=='random':
+            flag = ''
+        else:
+            flag = args.patch_select + '_'
+        # args.save = 'test'
+        args.save = flag+'EDSR_paper_x{}-'.format(args.scale) + str(args.burst_size) + '_' + args.loss + '_' + args.data_train
+        #args.pre_train = '../experiment1/pretrain_model/edsr_x2-0edfb8a3.pt'
+        args.no_augment = False
+        # #args.pre_train = '../experiment/'+flag+'EDSR_paper_x2-'+ str(args.burst_size) + '_' + args.loss + '/'+str(args.fold)+'/model/model_best.pt'
+
+    if args.template == 'EDSR_paper_x8_ani_sr_real':
+        args.model = 'EDSR_ani'
+        args.n_resblocks = 32
+        args.n_feats = 256
+        args.res_scale = 0.1
+        args.patch_size = (128, 16)
+        args.num_features = 180
+        args.burst_size = 1
+        # args.tile = True
+        args.tile = True
+        args.scale = '8'
+        args.data_train = 'ani_sr_real/1024_256'
+        args.data_test = 'ani_sr_real/1024_32'
+        args.rgb_range = 1
+        if args.downsample_gt:
+            down_scale = 2
+        else:
+            down_scale = 1
+        args.test_patch_size = (1024, 256 // int(args.scale))
+
+        args.loss = '1*RL1'
+        if args.patch_select=='random':
+            flag = ''
+        else:
+            flag = args.patch_select + '_'
+        # args.save = 'test'
+        args.save = flag+'EDSR_paper_x{}-'.format(args.scale) + str(args.burst_size) + '_' + args.loss + '_' + args.data_train
+        #args.pre_train = '../experiment1/pretrain_model/edsr_x2-0edfb8a3.pt'
+        args.no_augment = False
+        # #args.pre_train = '../experiment/'+flag+'EDSR_paper_x2-'+ str(args.burst_size) + '_' + args.loss + '/'+str(args.fold)+'/model/model_best.pt'
